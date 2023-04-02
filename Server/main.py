@@ -20,12 +20,12 @@ class Client:
 
 if __name__ == "__main__":
     while(True):
-        print("listening for clients")
+        print("Listening for clients")
         new_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         new_socket.bind(("127.0.0.1", 65432))
         new_socket.listen()
         conn, addr = new_socket.accept()  # wait for connection
-
+        print("Connected to client: ", addr)
         #create a new thread for the client
         t = threading.Thread(target=Client, args=(conn, addr))
         t.start()
