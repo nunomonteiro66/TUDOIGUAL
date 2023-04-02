@@ -27,14 +27,14 @@
 ## Planeamento
 ### Cliente
 #### Setup software
-- [ ] Escolher diretoria
-	- [ ] Verificar que esta vazia
+- [x] Escolher diretoria
+	- [ ] Verificar que esta vazia (ou encriptar o que ja la esta)
 - [ ] Gerar sk e pk (RSA)
 - [ ] Registar perante o servidor
 	- [ ] Envio de username e password cifrado, e da pk
 
 #### Uso do software
-- [ ] Tentar conectar ao servidor
+- [x] Tentar conectar ao servidor
 	- [ ] Informação cifrada
 	- [ ] Caso servidor offline, ir tentando em espacos de tempo
 - [ ] Detetar novo ficheiro na diretoria
@@ -52,13 +52,9 @@
 - [ ] escutar a futuras comunicações
 
 #### Uso do software
-- [ ] escutar por tentativas de ligacao
+- [x] escutar por tentativas de ligacao
 - [ ] escutar por novos ficheiros
 	- [ ] apos receber, verificar se um cliente nao contem o ficheiro (hash)
 		- [ ] caso nao tenha, pedir ficheiro a client1 (cifrado) e enviar ao client2 (decifrado e dps cifrado)
 
 
-## Modo de implementacao
-### Server
-- O main vai escutar por novos clientes
-	- Apos um cliente se conectar, cria uma thread especifica para esse cliente
