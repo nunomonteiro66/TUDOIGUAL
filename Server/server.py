@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify, send_file
 import mysql.connector
 from concurrent.futures import ThreadPoolExecutor
 import bcrypt
-from cryptography.hazmat.primitives.asymmetric import ec,padding
+from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import serialization,hashes
 from cryptography.hazmat.backends import default_backend
 import secrets
@@ -25,38 +25,47 @@ executor = ThreadPoolExecutor()
 
 def auth_user(signature,name):
 
-    sql = "SELECT public_key FROM `users` WHERE username = %s"
+    #ir buscar o nome da public key do user à bd
+    sql = "SELECT public_key FROM users WHERE username = %s"
     val = (name,)
     mycursor.execute(sql, val)
 
-    if mycursor.rowcount == 1:
-        result = mycursor.fetchone()
+    print(str(mycursor.rowcount) + name)
+    result = mycursor.fetchone()
+
+    if result is not None:
         pk_name = result[0]
 
-        with open('client_keys/'+pk_name+'.pem', 'rb') as key_file:
-            public_key = serialization.load_pem_private_key(
+        #abrir pk do user da diretoria client_keys
+        with open('client_keys/'+pk_name, 'rb') as key_file:
+            public_key = serialization.load_pem_public_key(
                 key_file.read(),
-                password=None,
                 backend=default_backend()
             )
+            
 
-        with open('auth_nonce/nonce'+name+'random_number.txt', 'r') as file:
+        #abrir e ler o nonce criado para a autenticação desse user da diretoria auth_nonce
+        with open('auth_nonce/nonce'+name+'.txt', 'r') as file:
             # Read the contents of the file
             contents = file.read()
 
         # Convert the contents to an integer
-        nonce = int(contents)
+        nonce = contents
         
+        #verificar assinatura com pk do user
         try:
             public_key.verify(
                 signature,
-                nonce,
-                padding.PKCS1v15(),
-                public_key.signing_algorithm
+                nonce.encode('utf-8'),
+                padding.PSS(
+                    mgf=padding.MGF1(hashes.SHA256()),
+                    salt_length=padding.PSS.MAX_LENGTH
+                ),
+                hashes.SHA256()
             )
-            return True  # Signature is valid
-        except Exception:
-            return False  # Signature is invalid
+            return "autenticado"  # Signature is valid
+        except Exception as e:
+            return str(e)  # Signature is invalid
 
     else:
         return "0"
@@ -93,22 +102,21 @@ def register_user(name, password,pk,path):
 def auth():
     data = request.form
     
-    
-    result = auth_user(data['key1'],data['key2'])
+    result = auth_user(data['key1'].encode('latin-1'),data['key2'])
     return result   
 
 #endpoint para receber nonce de autenticação (recebe o username)
 @app.route('/authNonce', methods=['POST'])
-def auth():
+def authNonce():
     data = request.form
     random_number = secrets.randbits(128)
 
-    with open('nonce'+data['key1']+'.txt', 'w') as file:
+    with open('auth_nonce/nonce'+data['key1']+'.txt', 'w') as file:
         # Write the random number to the file
         file.write(str(random_number))
 
 
-    return random_number
+    return str(random_number)
 
 @app.route('/regist', methods=['POST'])
 def register():
@@ -161,7 +169,6 @@ def register():
     #enviar os dados para a função que guarda os dados na bd
     result = register_user(username.decode('utf-8'), password.decode('utf-8'),filename,path.decode('utf-8'))
     return result
-    return "0"
 
 if __name__ == '__main__':
     app.run(debug=True)

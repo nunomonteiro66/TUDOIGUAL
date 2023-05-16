@@ -48,12 +48,42 @@ encrypted_path = public_key.encrypt(
 parameters = {'key1': encrypted_username.decode('latin-1'), 'key2': encrypted_password.decode('latin-1'), 'key3':encrypted_path.decode('latin-1')}
 
 
-
-url = 'http://127.0.0.1:5000/regist'
+#descomentar para testar registo
+'''url = 'http://127.0.0.1:5000/regist'
 
 #enviar ficheiro da pk do user
-file_path = 'server-pk/public_key.pem' #neste caso nao estou a enviar do user porque ainda não existe, mas aqui é para substituir por pk do user
+file_path = 'server-rsa-pk/public_key.pem' #neste caso nao estou a enviar do user porque ainda não existe, mas aqui é para substituir por pk do user
 files = {'file': open(file_path, 'rb')}
-response = requests.post(url, files=files, data=parameters)
+response = requests.post(url, files=files, data=parameters)'''
+
+#descomentar para testar authenticação
+'''
+url = 'http://127.0.0.1:5000/authNonce'
+parameters = {'key1': "DiogoV"}
+response = requests.post(url, data=parameters)
 
 print(response.text)
+
+with open('../Server/RSA-keys/private_key.pem', 'rb') as key_file:
+        private_key = serialization.load_pem_private_key(
+            key_file.read(),
+            password=None,
+            backend=default_backend()
+        )
+
+signature = private_key.sign(
+        response.text.encode('utf-8'),
+        padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()),
+            salt_length=padding.PSS.MAX_LENGTH
+        ),
+        hashes.SHA256()
+    )
+
+url = 'http://127.0.0.1:5000/auth'
+parameters = {'key1':signature.decode('latin-1'),'key2': "DiogoV"}
+response = requests.post(url, data=parameters)
+
+print(response.text)'''
+
+
