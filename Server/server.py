@@ -23,29 +23,39 @@ mydb = mysql.connector.connect(
 mycursor = mydb.cursor()
 executor = ThreadPoolExecutor()
 
-def auth_user(sign):
+def auth_user(signature,nonce):
 
-    random_number = secrets.randbits(128)
-    print(random_number)
+    
 
     return "0"
 
 #função para guardar registo na bd
 def register_user(name, password,pk,path):
 
-    #criar salt para guardar representação de bd
-    salt = bcrypt.gensalt()
-    hashed_password = bcrypt.hashpw(password.encode(), salt)
-
-    sql = "INSERT INTO users (username, password, public_key, directory_path) VALUES (%s, %s,%s,%s)"
-    val = (name, hashed_password,pk,path)
+    print(name)
+    sql = "SELECT COUNT(*) AS user_count FROM users WHERE username = %s"
+    val = (name,)
     mycursor.execute(sql, val)
-    mydb.commit()
+    result = mycursor.fetchone()
     
-    if mycursor.rowcount == 1:
-        return "1"
+    if result[0] == 0:
+        #criar salt para guardar representação de bd
+        salt = bcrypt.gensalt()
+        hashed_password = bcrypt.hashpw(password.encode(), salt)
+
+        sql = "INSERT INTO users (username, password, public_key, directory_path) VALUES (%s, %s,%s,%s)"
+        val = (name, hashed_password.decode(),pk,path)
+        mycursor.execute(sql, val)
+        mydb.commit()
+        
+        if mycursor.rowcount == 1:
+            return "1"
+        else:
+            return "0"
     else:
         return "0"
+
+    
     
 @app.route('/auth', methods=['POST'])
 def auth():

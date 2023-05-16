@@ -12,7 +12,7 @@ with open('server-rsa-pk/public_key.pem', 'rb') as key_file:
     )
 
 #parametros para registo
-username = "Diogo"
+username = "DiogoV"
 password = "teste456"
 path = "myDir"
 
