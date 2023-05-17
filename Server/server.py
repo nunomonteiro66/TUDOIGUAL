@@ -7,6 +7,7 @@ from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.backends import default_backend
 import secrets
 import json
+from cryptography.hazmat.primitives.asymmetric import ec
 
 app = Flask(__name__)
 
@@ -14,8 +15,8 @@ app = Flask(__name__)
 mydb = mysql.connector.connect(
     host="localhost",
     user="root",
-    password="",
-    database="tudoigual"
+    password="1234",
+    database="new_schema"
 )
 
 mycursor = mydb.cursor()
@@ -54,11 +55,9 @@ def auth_user(signature, name):
             public_key.verify(
                 signature,
                 nonce.encode('utf-8'),
-                padding.PSS(
-                    mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=padding.PSS.MAX_LENGTH
-                ),
-                hashes.SHA256()
+                #padding.PSS(mgf=padding.MGF1(hashes.SHA256()),salt_length=padding.PSS.MAX_LENGTH),
+                #hashes.SHA256()
+                ec.ECDSA(hashes.SHA256())
             )
             return "Autenticado. Bem-vindo!"  # Signature is valid
         except Exception as e:

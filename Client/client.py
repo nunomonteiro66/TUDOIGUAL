@@ -1,5 +1,5 @@
+import time
 import requests
-from OpenSSL import crypto
 from cryptography.hazmat.primitives.asymmetric import ec, padding
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.backends import default_backend
@@ -7,29 +7,14 @@ from tkinter import *
 import tkinter.messagebox as tkMessageBox
 import os
 
+from file_cypher import encrypt_file, decrypt_file, gen_client_ECC_keys, loadPrivateKey, loadPublicKey, signFile
+
 path = "client_keys"
 
 isExist = os.path.exists(path)
 if not isExist:
    os.makedirs(path)
 
-def gen_client_rsa_keys():
-    private_key = crypto.PKey()
-    private_key.generate_key(crypto.TYPE_RSA, 2048)
-
-    # Write the private key to a PEM file
-    with open(os.path.join(path, 'client_private_key.pem'), 'wb') as private_key_file:
-        private_key_file.write(crypto.dump_privatekey(crypto.FILETYPE_PEM, private_key))
-
-    # Extract the public key from the private key
-    public_key = private_key.to_cryptography_key().public_key()
-
-    # Write the public key to a PEM file
-    with open(os.path.join(path, 'client_public_key.pem'), 'wb') as public_key_file:
-        public_key_file.write(public_key.public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo
-        ))
 
 root = Tk()
 root.title("TUDOIGUAL - Sistema de Sincronização de Ficheiros Seguro")
@@ -114,14 +99,17 @@ def Login():
     response = requests.post(url, data=parameters)
 
     nonce = response.text.encode('utf-8')
-
+    if not os.path.exists('client_keys/client_private_key.pem'):
+        gen_client_ECC_keys()
     with open('client_keys/client_private_key.pem', 'rb') as key_file:
+        serialized_sk = key_file.read()
+        
         private_key = serialization.load_pem_private_key(
-            key_file.read(),
+            serialized_sk,
             password=None,
-            backend=default_backend()
+            #backend=default_backend()
         )
-
+    """
     signature = private_key.sign(
         nonce,
         padding.PSS(
@@ -130,16 +118,23 @@ def Login():
         ),
         hashes.SHA256()
     )
+    """
+
+    signature = private_key.sign(
+        nonce,
+        ec.ECDSA(hashes.SHA256())
+    )
 
     url = 'http://127.0.0.1:5000/auth'
     parameters = {'key1': signature.decode('latin-1'), 'key2': credentials['username'].get()}
     response = requests.post(url, data=parameters)
 
     print(response.text)
+    root.destroy() # fecha a janela de login, e continua com o programa (sincronizacao)
 
 def Register():
     # encryptar dados com pk do server
-    gen_client_rsa_keys()
+    gen_client_ECC_keys()
     filePath = "fileDir"
 
     encrypted_username = public_key.encrypt(
@@ -191,3 +186,30 @@ root.config(menu=menubar)
 # ========================================INITIALIZATION===================================
 if __name__ == '__main__':
     root.mainloop()
+
+    sk = loadPrivateKey()
+    pk = loadPublicKey()
+
+    #encrypt dos ficheiros da diretoria
+    sync_path = "sync"
+    if not os.path.exists(sync_path):
+        os.makedirs(sync_path)
+    allFiles1 = set(os.listdir(sync_path))
+    while(True):
+        allFiles2 = set(os.listdir(sync_path))
+        if allFiles1 != allFiles2: #changes in the directory
+            if(len(allFiles1) > len(allFiles2)): #a file was deleted
+                for file in (allFiles1-allFiles2):
+                    os.remove("./.signatures/"+file+".sig")
+            else: #a file was added
+                for file in (allFiles2-allFiles1):
+                    print("FILE:" + file)
+                    encrypt_file(os.path.join(sync_path, file), pk)
+                    signFile(os.path.join(sync_path, file), sk)
+
+            #ALERT THE SERVER
+            
+            allFiles1 = allFiles2
+
+        time.sleep(10) #10 seconds
+        #ask the server if there are any new files 
