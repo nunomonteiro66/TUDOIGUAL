@@ -77,10 +77,15 @@ class EncryptionClass():
     #derives a AES key from the public key
 
     def encrypt_file(self, file):
+        print("ENCRYPTING THE FILE")
         nonce = get_random_bytes(self.NONCE_SIZE)
         counter = Counter.new(128, initial_value=int.from_bytes(nonce, byteorder='big'))
         key = get_random_bytes(self.KEY_SIZE)
         cipher = AES.new(key, AES.MODE_CTR, counter=counter)
+
+        print("=======================")
+        print("Original key")
+        print(key)
 
         with open(os.path.join(self.sync_dir, file), 'rb') as f, open(os.path.join(self.sync_dir, file + '.enc'), 'wb') as g:
             data = f.read(self.CHUNK_SIZE)
@@ -144,6 +149,7 @@ class EncryptionClass():
     #decrypts and re-encrypts the key with the server's public key
     #returns the re-encrypted key and the nounce
     def serverEncrypt(self, file):
+        print("ENCRYPTING WITH THE SERVER'S PUBLIC KEY")
         original_key_file = os.path.join(self.keys_dir, file+".key")
 
         with open(original_key_file, 'rb') as original:
@@ -158,6 +164,8 @@ class EncryptionClass():
                     label=None
                 )
             )
+            print("Original key")
+            print(decrypted_key)
             encrypted_key = self.server_pk.encrypt(
                 decrypted_key,
                 padding.OAEP(
@@ -166,6 +174,9 @@ class EncryptionClass():
                     label=None
                 )
             )
+
+            print("ENCRYPTED KEY WITH SERVER")
+            print(encrypted_key)
            
 
         return nonce, encrypted_key
@@ -192,26 +203,27 @@ class EncryptionClass():
     """
 
     def checkSignature(self, file, sig_file, pk):
-        with open(file, 'rb') as f, open(sig_file, 'rb') as sig_file:
+        with open(sig_file, 'rb') as sig_file:
             signature = sig_file.read()
-            data = f.read(self.CHUNK_SIZE)
-            while data:
-                try:
-                    pk.verify(
-                        signature,
-                        data,
-                        padding.PSS(
-                            mgf=padding.MGF1(hashes.SHA256()),
-                            salt_length=padding.PSS.MAX_LENGTH
-                        ),
-                        hashes.SHA256()
-                    )
-                except:
-                    return False
-                data = f.read(self.CHUNK_SIZE)
+            hash = self.fileHash(file)
+            print(hash)
+            try:
+                pk.verify(
+                    signature,
+                    hash.encode('utf-8'),
+                    padding.PSS(
+                        mgf=padding.MGF1(hashes.SHA256()),
+                        salt_length=padding.PSS.MAX_LENGTH
+                    ),
+                    hashes.SHA256()
+                )
+            except:
+                return False
+                
             return True
 
     def fileHash(self,file):
+        print("HASHING THE FILE")
         with open(os.path.join(self.sync_dir, file), 'rb') as f:
             data = f.read(self.CHUNK_SIZE)
             hash = hashes.Hash(hashes.SHA256())

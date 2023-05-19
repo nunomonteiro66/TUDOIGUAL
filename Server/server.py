@@ -1,3 +1,4 @@
+import time
 from flask import Flask, request, jsonify, send_file, send_from_directory
 import mysql.connector
 from concurrent.futures import ThreadPoolExecutor
@@ -8,6 +9,8 @@ from cryptography.hazmat.backends import default_backend
 import secrets
 from cryptography.hazmat.primitives.asymmetric import ec
 import os
+from cyphers_util import decryptKey, loadClientPk, encryptKey, encryptZipFile, fileHash
+from zipfile import ZipFile
 
 app = Flask(__name__)
 
@@ -27,15 +30,21 @@ executor = ThreadPoolExecutor()
 #sends the name of the files missing in the user machine, so that he can ask them after
 @app.route('/checkFiles', methods=['POST'])
 def checkFiles():
+
+    #delete tmp files
+    for file in os.listdir(".tmp"):
+        os.remove(".tmp/"+file)
+
     print('checkFiles')
     files_missing = []
     data = request.form
     for file in os.listdir('client_files'):
         
-        users_missing = open('client_files/'+file, 'r').read().splitlines()
+        users_missing = open('client_files/'+file, 'r').read().splitlines() #list of users that need to receive the file
         if(data['key1'] in users_missing): #user is missing the file
             files_missing.append(file) #add file to the list of files missing
             users_missing.remove(data['key1']) #remove user from the list of users missing the file
+            with open('client_files/'+file, 'w') as f: f.write('\n'.join(users_missing)) #update the file
             continue #continue to next file
     print(files_missing)
     return '|'.join(files_missing)
@@ -43,15 +52,45 @@ def checkFiles():
 #sends the requested file to the user
 @app.route('/getFile', methods=['POST'])
 def getFile():
+    print("SENDING THE FILE TO THE USER")
     data = request.form
-    file = data['key1']
+    file = data['key1'] #filename
+    username = data['key2'] #username
+    
 
-    #TO-DO: decrypt file and encrypt with user public key
-    #TO-DO: send the key file and the file to the user
+    #decrypt the key, and get the nounce
+    nounce, key = decryptKey(file)
+    print("====================================")
+    print("Original key")
+    print(key)
+    #encrypt with the public key of the user
+    user_pk = loadClientPk(username)
+    encrypted_key = encryptKey(key, user_pk)
 
-    #send the file
-    with open('files/'+file, 'rb') as f:
-        return f.read().decode('latin-1')     
+    
+
+    #save into tmp file
+    with open(".tmp/"+file+".key-"+username, 'wb') as f:
+        f.write(nounce)
+        f.write(encrypted_key)
+    
+    #create zip file
+    with ZipFile(".tmp/"+file+".zip", 'w') as zipObj:
+        zipObj.write(".tmp/"+file+".key-"+username, file+".key")
+        zipObj.write("files/"+file, file)
+        zipObj.write(".signatures/"+file+".sig", file+".sig")
+
+    
+
+   
+    
+    #delete tmp files 
+    os.remove(".tmp/"+file+".key-"+username)
+    #os.remove(".tmp/"+file+".zip")
+
+    #send the zip file
+    return send_file(".tmp/"+file+".zip", as_attachment=True)
+    
 
 
 def sign_file(hash):
@@ -65,7 +104,7 @@ def sign_file(hash):
 
     # Sign the message with the private key
     signature = private_key.sign(
-        hash.encode('utf-8'),
+        hash,
         padding.PSS(
             mgf=padding.MGF1(hashes.SHA256()),
             salt_length=padding.PSS.MAX_LENGTH
@@ -87,17 +126,26 @@ def sendFile():
 
     # é necessário verificar o hash do ficheiro
 
-    # é necessario calcular a assinatura do ficheiro pelo hash
-    signature = sign_file(data['key2'])
     # Save the file to a desired location on the server
     file.save('files/'+data['key1'])
+
+    # é necessario calcular a assinatura do ficheiro pelo hash
+    hash = fileHash(os.path.join('files', data['key1']))
+    signature = sign_file(hash)
+    
+
+    print("====================================")
+    print("Hash")
+    print(hash)
     
 
     #save the nounce and the decryption key
     with open('files/'+data['key1']+'.key', 'wb') as f:
         f.write(data['key6'].encode('latin-1'))
         f.write(data['key4'].encode('latin-1'))
-    
+
+    print("Encrypted key with server")
+    print(data['key4'].encode('latin-1'))    
 
     # colocar ficheiro em falta para todos os users excepto no user que coloca o file
 
@@ -114,6 +162,10 @@ def sendFile():
         file.write(username) #wrtie the user as missing the file
         file.write('\n')
     file.close()
+
+    #save signature
+    with open(".signatures/"+data['key1']+".sig", 'wb') as sig_file:
+        sig_file.write(signature)
 
     return str(signature)
 

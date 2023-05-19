@@ -1,3 +1,4 @@
+import shutil
 import time
 import requests
 from cryptography.hazmat.primitives.asymmetric import ec, padding
@@ -10,7 +11,7 @@ import json
 
 #from file_cypher import encrypt_file, decrypt_file, gen_client_ECC_keys, loadPrivateKey, loadPublicKey, signFile
 from file_cypher_rsa import EncryptionClass
-
+import zipfile
 
 
 root = Tk()
@@ -42,7 +43,7 @@ server_pk = None
 
 #default configurations
 def MakeConfigFile():
-    globalValues['username'] = 'client_11'
+    globalValues['username'] = 'client_899'
     globalValues['password'] = '1234'
     globalValues['sync_dir'] = 'sync'
     globalValues['server_keys'] = './.server_keys'
@@ -254,16 +255,16 @@ def sendFile(file):
     data = {
         'key1': file, 
         'key2': open(file_full_path, 'rb').read(),
-        'key3': Encclass.fileHash(file),
+        #'key3': Encclass.fileHash(file).decode('latin-1'),
         'key4': encrypted_key.decode('latin-1'),
         'key5': globalValues['username'],
         'key6': nonce.decode('latin-1'),
         'key7': globalValues['username']
         }
 
-    print(nonce)
+    #print(nonce)
     
-    print(str(encrypted_key))
+    #print(str(encrypted_key))
     response = requests.post(url, data=data, files={'file':open(file_full_path, 'rb')}) #!!!!! Two times file sent!!
     
     return response.text #signature of the file
@@ -276,11 +277,35 @@ def checkNewFilesInServer():
     if(files_missing[0] == ""):
         return
     for file in files_missing:
+        #get the zip file
         url = 'http://127.0.0.1:5000/getFile'
-        data = {'key1': file}
+        data = {'key1': file, 'key2': globalValues['username']}
         response = requests.post(url, data=data)
-        with open(globalValues['sync_dir']+"/"+file, 'w') as f:
-            f.write(response.text)
+        #save zip
+        with open(globalValues['sync_dir']+"/"+file+".zip", 'wb') as f:
+            f.write(response.content)
+        
+
+        #unzip file
+        with zipfile.ZipFile(globalValues['sync_dir']+"/"+file+".zip", 'r') as zip_ref:
+            zip_ref.extractall(globalValues['sync_dir'])
+        
+        #move keys to the keys directory
+        shutil.move(globalValues['sync_dir']+"/"+file+".key", globalValues['keys_dir']+"/"+file+".key")
+
+        #move the signature to the signatures directory
+        shutil.move(globalValues['sync_dir']+"/"+file+".sig", globalValues['signature_dir']+"/"+file+".sig")
+
+        #verify signature
+        check = Encclass.checkSignature(file, "./.signatures/"+file+".sig", server_pk)
+        print("-----------Signature check-----------")
+        print(check)
+
+        
+
+        #remove the zip file
+        os.remove(globalValues['sync_dir']+"/"+file+".zip")
+
 
 LoginForm()
 
@@ -330,15 +355,16 @@ if __name__ == '__main__':
                 pass
             else: #a file was added
                 for file in (allFiles2-allFiles1):
+                    if(os.path.isfile(globalValues['keys_dir']+"/"+file+".key")): continue #file was received from server (already encrypted)
                     print("FILE:" + file)
                     Encclass.encrypt_file(file)
                     #pedir assinatura ao servidor
                     signature = sendFile(file)
                     #print(signature)
-                    #with open("./.signatures/"+file+".sig", "w") as f: f.write(signature)
+                    with open("./.signatures/"+file+".sig", "w") as f: f.write(signature)
                     #verify signature
-                    #check = Encclass.checkSignature(os.path.join(sync_path, file), "./.signatures/"+file+".sig", server_pk)
-                    #print(check)
+                    check = Encclass.checkSignature(file, "./.signatures/"+file+".sig", server_pk)
+                    print(check)
             #ALERT THE SERVER
             
             allFiles1 = allFiles2
