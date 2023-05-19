@@ -24,43 +24,39 @@ executor = ThreadPoolExecutor()
 
 # endpoint para verificar ficheiros em falta para cliente: necessita de username
 
-
+#sends the name of the files missing in the user machine, so that he can ask them after
 @app.route('/checkFiles', methods=['POST'])
 def checkFiles():
+    print('checkFiles')
+    files_missing = []
     data = request.form
+    for file in os.listdir('client_files'):
+        
+        users_missing = open('client_files/'+file, 'r').read().splitlines()
+        if(data['key1'] in users_missing): #user is missing the file
+            files_missing.append(file) #add file to the list of files missing
+            users_missing.remove(data['key1']) #remove user from the list of users missing the file
+            continue #continue to next file
+    print(files_missing)
+    return '|'.join(files_missing)
 
-    # Open the file in read mode
-    file = open("clien_files/"+data['key1']+".txt", 'r')
+#sends the requested file to the user
+@app.route('/getFile', methods=['POST'])
+def getFile():
+    data = request.form
+    file = data['key1']
 
-    # Read the lines of the file into a list
-    file_lines = file.readlines()
+    #TO-DO: decrypt file and encrypt with user public key
+    #TO-DO: send the key file and the file to the user
 
-    # Close the file
-    file.close()
-    # Process the lines and create a list of filenames
-    filenames = [line.strip() for line in file_lines]
-
-    if len(filenames) == 0:
-        return "está sync"
-    else:
-        # limpar o ficheiro porque o cliente vai ficar sincronizado
-        file = open("clien_files/"+data['key1']+".txt", 'w')
-        file.close()
-        responses = []
-        for file_path in filenames:
-            response = send_from_directory(
-                '/path/to/directory', file_path, as_attachment=True)
-            responses.append(response)
-
-            # Combine the responses into a single response
-            custom_response = app.make_response(responses)
-
-    return custom_response
+    #send the file
+    with open('files/'+file, 'rb') as f:
+        return f.read().decode('latin-1')     
 
 
 def sign_file(hash):
 
-    with open('client_keys/client_private_key.pem', 'rb') as key_file:
+    with open('RSA-keys/private_key.pem', 'rb') as key_file:
         private_key = serialization.load_pem_private_key(
             key_file.read(),
             password=None,
@@ -95,19 +91,29 @@ def sendFile():
     signature = sign_file(data['key2'])
     # Save the file to a desired location on the server
     file.save('files/'+data['key1'])
+    
+
+    #save the nounce and the decryption key
+    with open('files/'+data['key1']+'.key', 'wb') as f:
+        f.write(data['key6'].encode('latin-1'))
+        f.write(data['key4'].encode('latin-1'))
+    
 
     # colocar ficheiro em falta para todos os users excepto no user que coloca o file
 
-    for filename in os.listdir("client_files"):
-        # Create the full file path
-        file_path = os.path.join("client_files", filename)
+    #create file with the name of the file received
+    if not os.path.isfile('client_files/'+data['key1']):
+        file = open('client_files/'+data['key1'], 'w') 
+    else:
+        file = open('client_files/'+data['key1'], 'a')
 
-        # Check if the path corresponds to a file
-        if os.path.isfile(file_path) and file_path not in data['key4']+'.txt':
-            # Open the file in append mode ('a')
-            with open(file_path, 'a') as file:
-                # Write the line to the file
-                file.write(data['key1'] + "\n")
+    for filename in os.listdir('client_keys'):
+        username = filename.split('pk')[0]
+        if(username == data['key7']): #current user
+            continue
+        file.write(username) #wrtie the user as missing the file
+        file.write('\n')
+    file.close()
 
     return str(signature)
 
@@ -144,13 +150,14 @@ def auth_user(signature, name):
             public_key.verify(
                 signature,
                 nonce.encode('utf-8'),
-                # padding.PSS(mgf=padding.MGF1(hashes.SHA256()),salt_length=padding.PSS.MAX_LENGTH),
-                # hashes.SHA256()
-                ec.ECDSA(hashes.SHA256())
+                padding.PSS(mgf=padding.MGF1(hashes.SHA256()),salt_length=padding.PSS.MAX_LENGTH),
+                hashes.SHA256()
+                #ec.ECDSA(hashes.SHA256())
             )
-            return "Autenticado. Bem-vindo!"  # Signature is valid
+            return "1"  # Signature is valid
         except Exception as e:
-            return str(e)  # Signature is invalid
+            print(e)
+            return "0" # Signature is invalid
 
     else:
         return "0"
@@ -228,7 +235,7 @@ def register():
             label=None
         )
     )
-
+    
     password = private_key.decrypt(
         data['key2'].encode('latin-1'),
         padding.OAEP(
@@ -237,6 +244,7 @@ def register():
             label=None
         )
     )
+    
 
     path = private_key.decrypt(
         data['key3'].encode('latin-1'),

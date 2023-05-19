@@ -6,14 +6,11 @@ from cryptography.hazmat.backends import default_backend
 from tkinter import *
 import tkinter.messagebox as tkMessageBox
 import os
+import json
 
-from file_cypher import encrypt_file, decrypt_file, gen_client_ECC_keys, loadPrivateKey, loadPublicKey, signFile
+#from file_cypher import encrypt_file, decrypt_file, gen_client_ECC_keys, loadPrivateKey, loadPublicKey, signFile
+from file_cypher_rsa import EncryptionClass
 
-path = "client_keys"
-
-isExist = os.path.exists(path)
-if not isExist:
-   os.makedirs(path)
 
 
 root = Tk()
@@ -29,15 +26,52 @@ root.geometry("%dx%d+%d+%d" % (width, height, x, y))
 root.resizable(0, 0)
 
 # =======================================VARIABLES=====================================
-credentials = {'username': StringVar(), 'password': StringVar()}
+globalValues = {
+    'username': "", 
+    'password': "",
+    'sync_dir': "",
+    'server_keys': "",
+    'signature_dir': "",
+    'client_keys': "",
+    'keys_dir': ""
+    }
+
+client_sk = None
+client_pk = None
+server_pk = None
+
+#default configurations
+def MakeConfigFile():
+    globalValues['username'] = 'client_11'
+    globalValues['password'] = '1234'
+    globalValues['sync_dir'] = 'sync'
+    globalValues['server_keys'] = './.server_keys'
+    globalValues['signature_dir'] = './.signatures'
+    globalValues['client_keys'] = './.client_keys'
+    globalValues['keys_dir'] = './.keys'
+    with open("config.txt", "w") as f:
+        json.dump(globalValues, f)
+
+    #create directories
+    if not os.path.exists(globalValues['server_keys']):
+        os.makedirs(globalValues['server_keys'])
+    if not os.path.exists(globalValues['signature_dir']):
+        os.makedirs(globalValues['signature_dir'])
+    if not os.path.exists(globalValues['client_keys']):
+        os.makedirs(globalValues['client_keys'])
+    if not os.path.exists(globalValues['keys_dir']):
+        os.makedirs(globalValues['keys_dir'])
+    if not os.path.exists(globalValues['sync_dir']):
+        os.makedirs(globalValues['sync_dir'])
+
+    
 
 
-# Load the public key from file
-with open('server-rsa-pk/public_key.pem', 'rb') as key_file:
-    public_key = serialization.load_pem_public_key(
-        key_file.read(),
-        backend=default_backend()
-    )
+
+def LoadConfigFile():
+    global globalValues
+    with open("config.txt", "r") as f:
+        globalValues = json.load(f)
 
 def Exit():
     result = tkMessageBox.askquestion('System', 'Are you sure you want to exit?', icon="warning")
@@ -55,9 +89,9 @@ def LoginForm():
     lbl_password.grid(row=2)
     lbl_result1 = Label(LoginFrame, text="", font=('arial', 18))
     lbl_result1.grid(row=3, columnspan=2)
-    USERNAME = Entry(LoginFrame, font=('arial', 20), textvariable=credentials['username'], width=15)
+    USERNAME = Entry(LoginFrame, font=('arial', 20), textvariable=globalValues['username'], width=15)
     USERNAME.grid(row=1, column=1)
-    PASSWORD = Entry(LoginFrame, font=('arial', 20), textvariable=credentials['password'], width=15, show="*")
+    PASSWORD = Entry(LoginFrame, font=('arial', 20), textvariable=globalValues['password'], width=15, show="*")
     PASSWORD.grid(row=2, column=1)
     btn_login = Button(LoginFrame, text="Login", font=('arial', 18), width=35, command=Login)
     btn_login.grid(row=4, columnspan=2, pady=20)
@@ -75,9 +109,9 @@ def RegisterForm():
     lbl_password.grid(row=2)
     lbl_result2 = Label(RegisterFrame, text="", font=('arial', 18))
     lbl_result2.grid(row=5, columnspan=2)
-    USERNAME = Entry(RegisterFrame, font=('arial', 20), textvariable=credentials['username'], width=15)
+    USERNAME = Entry(RegisterFrame, font=('arial', 20), textvariable=globalValues['username'], width=15)
     USERNAME.grid(row=1, column=1)
-    PASSWORD = Entry(RegisterFrame, font=('arial', 20), textvariable=credentials['password'], width=15, show="*")
+    PASSWORD = Entry(RegisterFrame, font=('arial', 20), textvariable=globalValues['password'], width=15, show="*")
     PASSWORD.grid(row=2, column=1)
     btn_login = Button(RegisterFrame, text="Register", font=('arial', 18), width=35, command=Register)
     btn_login.grid(row=6, columnspan=2, pady=20)
@@ -93,14 +127,36 @@ def ToggleToRegister(event=None):
     LoginFrame.destroy()
     RegisterForm()
 
+def Authentication():
+    url = 'http://127.0.0.1:5000/createNonce'
+    parameters = {'key1': globalValues['username']}
+    response = requests.post(url, data=parameters) #nonce do servidor
+
+    nonce = response.text.encode('utf-8')
+
+    signature = client_sk.sign(
+        nonce,
+        padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()),
+            salt_length=padding.PSS.MAX_LENGTH
+        ),
+        hashes.SHA256(),
+    )
+
+    url = 'http://127.0.0.1:5000/auth'
+    parameters = {'key1': signature.decode('latin-1'), 'key2': globalValues['username']}
+    response = requests.post(url, data=parameters) #envia a assinatura para verificacao
+    return response.text #1 se autenticado, 0 se nao autenticado
+
 def Login():
     url = 'http://127.0.0.1:5000/createNonce'
-    parameters = {'key1': credentials['username'].get()}
+    parameters = {'key1': globalValues['username']}
     response = requests.post(url, data=parameters)
 
     nonce = response.text.encode('utf-8')
     if not os.path.exists('client_keys/client_private_key.pem'):
-        gen_client_ECC_keys()
+        #gen_client_ECC_keys()
+        Encclass.genKeysRSA()
     with open('client_keys/client_private_key.pem', 'rb') as key_file:
         serialized_sk = key_file.read()
         
@@ -126,7 +182,7 @@ def Login():
     )
 
     url = 'http://127.0.0.1:5000/auth'
-    parameters = {'key1': signature.decode('latin-1'), 'key2': credentials['username'].get()}
+    parameters = {'key1': signature.decode('latin-1'), 'key2': globalValues['username']}
     response = requests.post(url, data=parameters)
 
     print(response.text)
@@ -134,11 +190,16 @@ def Login():
 
 def Register():
     # encryptar dados com pk do server
-    gen_client_ECC_keys()
-    filePath = "fileDir"
+    #gen_client_ECC_keys()
+    global client_sk, client_pk, server_pk
+    client_sk, client_pk = Encclass.genKeysRSA(globalValues['client_keys']) #generate client keys in the specified directory
+    
+    #load server public key
+    server_pk = Encclass.loadPublicKeyRSA(globalValues['server_keys'])
 
-    encrypted_username = public_key.encrypt(
-        credentials['username'].get().encode('utf-8'),  # para encryptar dados tem de ser binario com utf-8
+    #encrypt the username and password with the server's public key
+    encrypted_username = server_pk.encrypt(
+        globalValues['username'].encode('utf-8'),  # para encryptar dados tem de ser binario com utf-8
         padding.OAEP(
             mgf=padding.MGF1(algorithm=hashes.SHA256()),
             algorithm=hashes.SHA256(),
@@ -146,17 +207,19 @@ def Register():
         )
     )
 
-    encrypted_password = public_key.encrypt(
-        credentials['password'].get().encode('utf-8'),
+    
+    encrypted_password = server_pk.encrypt(
+        globalValues['password'].encode('utf-8'),
         padding.OAEP(
             mgf=padding.MGF1(algorithm=hashes.SHA256()),
             algorithm=hashes.SHA256(),
             label=None
         )
     )
+    
 
-    encrypted_path = public_key.encrypt(
-        filePath.encode('utf-8'),
+    encrypted_path = server_pk.encrypt(
+        globalValues['sync_dir'].encode('utf-8'),
         padding.OAEP(
             mgf=padding.MGF1(algorithm=hashes.SHA256()),
             algorithm=hashes.SHA256(),
@@ -171,11 +234,53 @@ def Register():
     url = 'http://127.0.0.1:5000/registo'
 
     # enviar ficheiro da pk do user
-    file_path = os.path.join(path, 'client_public_key.pem') # neste caso nao estou a enviar do user porque ainda não existe, mas aqui é para substituir por pk do user
-    files = {'file': open(file_path, 'rb')}
+    files = {'file': open(globalValues['client_keys']+'/pk_rsa.pem', 'rb')}
     response = requests.post(url, files=files, data=parameters)
 
     print(response.text)
+
+#envia o ficheiro para o servidor
+#devolve a assinatura do ficheiro por parte do servidor
+def sendFile(file):
+    if(Authentication() != "1"):
+        print("Authentication failed")
+        return
+    
+    #create a copy of the key file, desencrypt and encrypt it with the pk of the server
+    nonce, encrypted_key = Encclass.serverEncrypt(file)
+    
+    url = 'http://127.0.0.1:5000/sendFile'
+    file_full_path = os.path.join(globalValues['sync_dir'],file)
+    data = {
+        'key1': file, 
+        'key2': open(file_full_path, 'rb').read(),
+        'key3': Encclass.fileHash(file),
+        'key4': encrypted_key.decode('latin-1'),
+        'key5': globalValues['username'],
+        'key6': nonce.decode('latin-1'),
+        'key7': globalValues['username']
+        }
+
+    print(nonce)
+    
+    print(str(encrypted_key))
+    response = requests.post(url, data=data, files={'file':open(file_full_path, 'rb')}) #!!!!! Two times file sent!!
+    
+    return response.text #signature of the file
+
+def checkNewFilesInServer():
+    url = 'http://127.0.0.1:5000/checkFiles'
+    data = {'key1': globalValues['username']}
+    response = requests.post(url, data=data)
+    files_missing = response.text.split('|')
+    if(files_missing[0] == ""):
+        return
+    for file in files_missing:
+        url = 'http://127.0.0.1:5000/getFile'
+        data = {'key1': file}
+        response = requests.post(url, data=data)
+        with open(globalValues['sync_dir']+"/"+file, 'w') as f:
+            f.write(response.text)
 
 LoginForm()
 
@@ -185,10 +290,32 @@ root.config(menu=menubar)
 
 # ========================================INITIALIZATION===================================
 if __name__ == '__main__':
-    root.mainloop()
+    global Encclass
+    
 
-    sk = loadPrivateKey()
-    pk = loadPublicKey()
+    if not os.path.isfile('config.txt'): #first time running the program
+        MakeConfigFile() #create config file with default values, and load them
+        Encclass = EncryptionClass(globalValues)
+        Register()
+    else:
+        LoadConfigFile() #loads global values from the config file
+        Encclass = EncryptionClass(globalValues)
+        client_pk = Encclass.client_pk
+        client_sk = Encclass.client_sk
+
+    
+    #root.mainloop()
+    auth = Authentication()
+    if(auth != "1"):
+        print("Authentication failed")
+        exit()
+    else:
+        print("Authentication successful")
+
+    #sk = loadPrivateKey()
+    #pk = loadPublicKey()
+
+
 
     #encrypt dos ficheiros da diretoria
     sync_path = "sync"
@@ -199,17 +326,26 @@ if __name__ == '__main__':
         allFiles2 = set(os.listdir(sync_path))
         if allFiles1 != allFiles2: #changes in the directory
             if(len(allFiles1) > len(allFiles2)): #a file was deleted
-                for file in (allFiles1-allFiles2):
-                    os.remove("./.signatures/"+file+".sig")
+                #for file in (allFiles1-allFiles2): os.remove("./.signatures/"+file+".sig")
+                pass
             else: #a file was added
                 for file in (allFiles2-allFiles1):
                     print("FILE:" + file)
-                    encrypt_file(os.path.join(sync_path, file), pk)
-                    signFile(os.path.join(sync_path, file), sk)
-
+                    Encclass.encrypt_file(file)
+                    #pedir assinatura ao servidor
+                    signature = sendFile(file)
+                    #print(signature)
+                    #with open("./.signatures/"+file+".sig", "w") as f: f.write(signature)
+                    #verify signature
+                    #check = Encclass.checkSignature(os.path.join(sync_path, file), "./.signatures/"+file+".sig", server_pk)
+                    #print(check)
             #ALERT THE SERVER
             
             allFiles1 = allFiles2
+
+
+        #check for new files in server
+        checkNewFilesInServer()
 
         time.sleep(10) #10 seconds
         #ask the server if there are any new files 
