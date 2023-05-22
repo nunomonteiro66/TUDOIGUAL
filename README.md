@@ -2,7 +2,7 @@
 
 ## Requisitos
 - Aplicação cliente e servidor
-- Aplicação cliente: 
+- Aplicação cliente:  
 	- Apos se instalar indicar uma diretoria para os ficheiros a serem sincronizados
 	- Cifrar o ficheiro imediatamente apos ser colocado na diretoria (AES)
 		- Cifrar a cifra simetrica com RSA (sk do cliente)
