@@ -7,7 +7,7 @@
 	- Cifrar o ficheiro imediatamente apos ser colocado na diretoria (AES)
 		- Cifrar a cifra simetrica com RSA (sk do cliente)
 	- Apos cifrar, calcular uma assinatura digital (guardada localmente)
-	- Notificar o servidor do novo ficheiro
+	- Notificar o servidor do novo ficheiro 
 	- Devem ter a certeza que estao a comunicar com o servidor
 		- P.e, deve haver um registo na primeira utilização
 - Servidor:
