@@ -1,14 +1,12 @@
-import time
+import time, secrets, os, bcrypt, mysql.connector
 from flask import Flask, request, jsonify, send_file, send_from_directory
-import mysql.connector
 from concurrent.futures import ThreadPoolExecutor
-import bcrypt
+
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.backends import default_backend
-import secrets
 from cryptography.hazmat.primitives.asymmetric import ec
-import os
+
 from cyphers_util import decryptKey, loadClientPk, encryptKey, encryptZipFile, fileHash
 from zipfile import ZipFile
 
