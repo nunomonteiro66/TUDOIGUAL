@@ -10,10 +10,8 @@ import os
 import json
 
 #from file_cypher import encrypt_file, decrypt_file, gen_client_ECC_keys, loadPrivateKey, loadPublicKey, signFile
-from file_cypher import EncryptionClass
+from file_cypher_rsa import EncryptionClass
 import zipfile
-
-SERVER_IP = "http://"+"192.168.1.175:5000"
 
 
 root = Tk()
@@ -45,7 +43,7 @@ server_pk = None
 
 #default configurations
 def MakeConfigFile():
-    globalValues['username'] = 'asdasdasd'
+    globalValues['username'] = 'client_asdasdsadsad'
     globalValues['password'] = '1234'
     globalValues['sync_dir'] = 'sync'
     globalValues['server_keys'] = './.server_keys'
@@ -131,7 +129,7 @@ def ToggleToRegister(event=None):
     RegisterForm()
 
 def Authentication():
-    url = SERVER_IP+'/createNonce'
+    url = 'http://127.0.0.1:5000/createNonce'
     parameters = {'key1': globalValues['username']}
     response = requests.post(url, data=parameters) #nonce do servidor
 
@@ -139,16 +137,20 @@ def Authentication():
 
     signature = client_sk.sign(
         nonce,
-        ec.ECDSA(hashes.SHA256())
+        padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()),
+            salt_length=padding.PSS.MAX_LENGTH
+        ),
+        hashes.SHA256(),
     )
 
-    url = SERVER_IP+'/auth'
+    url = 'http://127.0.0.1:5000/auth'
     parameters = {'key1': signature.decode('latin-1'), 'key2': globalValues['username']}
     response = requests.post(url, data=parameters) #envia a assinatura para verificacao
     return response.text #1 se autenticado, 0 se nao autenticado
 
 def Login():
-    url = SERVER_IP+'/createNonce'
+    url = 'http://127.0.0.1:5000/createNonce'
     parameters = {'key1': globalValues['username']}
     response = requests.post(url, data=parameters)
 
@@ -180,7 +182,7 @@ def Login():
         ec.ECDSA(hashes.SHA256())
     )
 
-    url = SERVER_IP+'/auth'
+    url = 'http://127.0.0.1:5000/auth'
     parameters = {'key1': signature.decode('latin-1'), 'key2': globalValues['username']}
     response = requests.post(url, data=parameters)
 
@@ -195,7 +197,7 @@ def Register():
     
     #load server public key
     server_pk = Encclass.server_pk
-    """
+
     #encrypt the username and password with the server's public key
     encrypted_username = server_pk.encrypt(
         globalValues['username'].encode('utf-8'),  # para encryptar dados tem de ser binario com utf-8
@@ -216,7 +218,7 @@ def Register():
         )
     )
     
-    
+
     encrypted_path = server_pk.encrypt(
         globalValues['sync_dir'].encode('utf-8'),
         padding.OAEP(
@@ -225,16 +227,15 @@ def Register():
             label=None
         )
     )
-    """
 
     # a encriptaçao cria os dados em binario com latin-1, e dá erro ao receber no server com este formato por isso dou decode antes de enviar para enviar a cifra com "string" em vez de "binario"
-    parameters = {'key1': globalValues['username'], 'key2': globalValues['password'],
-                  'key3': globalValues['sync_dir']}
+    parameters = {'key1': encrypted_username.decode('latin-1'), 'key2': encrypted_password.decode('latin-1'),
+                  'key3': encrypted_path.decode('latin-1')}
 
-    url = SERVER_IP+'/registo'
+    url = 'http://127.0.0.1:5000/registo'
 
     # enviar ficheiro da pk do user
-    files = {'file': open(globalValues['client_keys']+'/pk.pem', 'rb')}
+    files = {'file': open(globalValues['client_keys']+'/pk_rsa.pem', 'rb')}
     response = requests.post(url, files=files, data=parameters)
 
     print(response.text)
@@ -246,37 +247,30 @@ def sendFile(file):
         print("Authentication failed")
         return
     
-    #creates a copy of the keyfile in tmp folder, decrypts it and encrypts it with the server's public key
-    nonce, ctpk = Encclass.serverEncrypt(file)
+    #create a copy of the key file, desencrypt and encrypt it with the pk of the server
+    nonce, encrypted_key = Encclass.serverEncrypt(file)
     
-    url = SERVER_IP+'/sendFile'
-    #file_full_path = os.path.join("./.tmp",file)
+    url = 'http://127.0.0.1:5000/sendFile'
+    file_full_path = os.path.join(globalValues['sync_dir'],file)
     data = {
         'key1': file, 
-        #'key2': open(file_full_path, 'rb').read(),
+        'key2': open(file_full_path, 'rb').read(),
         #'key3': Encclass.fileHash(file).decode('latin-1'),
-        #'key4': ctpk.decode('latin-1'),
+        'key4': encrypted_key.decode('latin-1'),
         'key5': globalValues['username'],
-        #'key6': nonce.decode('latin-1'),
+        'key6': nonce.decode('latin-1'),
         'key7': globalValues['username']
         }
-
 
     #print(nonce)
     
     #print(str(encrypted_key))
-    response = requests.post(url, data=data, files={
-        'file':open(os.path.join(globalValues['sync_dir'], file), 'rb'),
-        'keyfile': open("./.tmp/"+file+".key", 'rb')
-        }) 
-    #print(open("./.tmp/"+file+".key", 'rb').read())
-    #delete tmp files
-    os.remove("./.tmp/"+file+".key")
-
+    response = requests.post(url, data=data, files={'file':open(file_full_path, 'rb')}) #!!!!! Two times file sent!!
+    
     return response.text.encode('latin-1') #signature of the file
 
 def checkNewFilesInServer():
-    url = SERVER_IP+'/checkFiles'
+    url = 'http://127.0.0.1:5000/checkFiles'
     data = {'key1': globalValues['username']}
     response = requests.post(url, data=data)
     files_missing = response.text.split('|')
@@ -284,7 +278,7 @@ def checkNewFilesInServer():
         return
     for file in files_missing:
         #get the zip file
-        url = SERVER_IP+'/getFile'
+        url = 'http://127.0.0.1:5000/getFile'
         data = {'key1': file, 'key2': globalValues['username']}
         response = requests.post(url, data=data)
         #save zip
@@ -297,7 +291,7 @@ def checkNewFilesInServer():
             zip_ref.extractall(globalValues['sync_dir'])
 
         #verify signature
-        check = Encclass.checkSignature(file, globalValues['sync_dir']+"/"+file+".sig")
+        check = Encclass.checkSignature(file, "./.signatures/"+file+".sig", server_pk)
         print("-----------Signature check-----------")
         print(check)
         if not check:
@@ -376,7 +370,7 @@ if __name__ == '__main__':
                     check = Encclass.checkSignature(file, "./.signatures/"+file+".sig")
                     if(not check): #invalid signature
                         print("Invalid signature")
-                        os.remove("./.signatures/"+file+".sig") #!!!!!!!!!!!!!!
+                        os.remove("./.signatures/"+file+".sig")
 
 
             #ALERT THE SERVER

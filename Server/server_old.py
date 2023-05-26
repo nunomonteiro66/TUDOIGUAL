@@ -1,4 +1,3 @@
-import shutil
 import time
 from flask import Flask, request, jsonify, send_file, send_from_directory
 import mysql.connector
@@ -10,12 +9,8 @@ from cryptography.hazmat.backends import default_backend
 import secrets
 from cryptography.hazmat.primitives.asymmetric import ec
 import os
-#from cyphers_util import decryptKey, loadClientPk, encryptKey, encryptZipFile, fileHash
-from utils import decAndEnc, fileHash
+from cyphers_util import decryptKey, loadClientPk, encryptKey, encryptZipFile, fileHash
 from zipfile import ZipFile
-import hashlib
-
-
 
 app = Flask(__name__)
 
@@ -54,9 +49,6 @@ def checkFiles():
     print(files_missing)
     return '|'.join(files_missing)
 
-
-
-
 #sends the requested file to the user
 @app.route('/getFile', methods=['POST'])
 def getFile():
@@ -65,16 +57,26 @@ def getFile():
     file = data['key1'] #filename
     username = data['key2'] #username
     
-    #decrypt the keyfile and encrypt it with the user public key
-    decAndEnc(file, username)
-    
+
+    #decrypt the key, and get the nounce
+    nounce, key = decryptKey(file)
+    print("====================================")
+    print("Original key")
+    print(key)
+    #encrypt with the public key of the user
+    user_pk = loadClientPk(username)
+    encrypted_key = encryptKey(key, user_pk)
 
     
 
+    #save into tmp file
+    with open(".tmp/"+file+".key-"+username, 'wb') as f:
+        f.write(nounce)
+        f.write(encrypted_key)
     
     #create zip file
     with ZipFile(".tmp/"+file+".zip", 'w') as zipObj:
-        zipObj.write(".tmp/"+file+".key", file+".key")
+        zipObj.write(".tmp/"+file+".key-"+username, file+".key")
         zipObj.write("files/"+file, file)
         zipObj.write(".signatures/"+file+".sig", file+".sig")
 
@@ -83,7 +85,7 @@ def getFile():
    
     
     #delete tmp files 
-    os.remove(".tmp/"+file+".key")
+    os.remove(".tmp/"+file+".key-"+username)
     #os.remove(".tmp/"+file+".zip")
 
     #send the zip file
@@ -93,7 +95,7 @@ def getFile():
 
 def sign_file(hash):
 
-    with open('Ecc-keys/private_key.pem', 'rb') as key_file:
+    with open('RSA-keys/private_key.pem', 'rb') as key_file:
         private_key = serialization.load_pem_private_key(
             key_file.read(),
             password=None,
@@ -103,7 +105,11 @@ def sign_file(hash):
     # Sign the message with the private key
     signature = private_key.sign(
         hash,
-        ec.ECDSA(hashes.SHA256())
+        padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()),
+            salt_length=padding.PSS.MAX_LENGTH
+        ),
+        hashes.SHA256()
     )
 
     # Return the signature as bytes
@@ -117,13 +123,11 @@ def sendFile():
     data = request.form
 
     file = request.files['file']
-    keyfile = request.files['keyfile']
 
     # é necessário verificar o hash do ficheiro
 
     # Save the file to a desired location on the server
     file.save('files/'+data['key1'])
-    keyfile.save('files/'+data['key1']+".key")
 
     # é necessario calcular a assinatura do ficheiro pelo hash
     hash = fileHash(os.path.join('files', data['key1']))
@@ -134,31 +138,15 @@ def sendFile():
     print("Hash")
     print(hash)
     
-    """
+
     #save the nounce and the decryption key
     with open('files/'+data['key1']+'.key', 'wb') as f:
-        f.write(data['key6'].encode('latin-1')) #nounce
-        f.write(data['key4'].encode('latin-1')) #ctpk
-
-        #calculate the sharedkey
-        private_key = serialization.load_pem_private_key(
-            open('Ecc-keys/private_key.pem', 'rb').read(),
-            password=None,
-        )
-
-        ctpk = serialization.load_pem_public_key(
-            data['key4'].encode('latin-1'),
-        )
-        AESkey = private_key.exchange(ec.ECDH(), ctpk)
-        AESkey = hashlib.sha256(AESkey)
-        #AESkey.update(sharedECCkey_y.to_bytes(KEY_SIZE, byteorder='big'))
-        AESkey = AESkey.digest()
-        f.write(AESkey) #shared key
-    
+        f.write(data['key6'].encode('latin-1'))
+        f.write(data['key4'].encode('latin-1'))
 
     print("Encrypted key with server")
     print(data['key4'].encode('latin-1'))    
-    """
+
     # colocar ficheiro em falta para todos os users excepto no user que coloca o file
 
     #create file with the name of the file received
@@ -188,7 +176,7 @@ def auth_user(signature, name):
     val = (name,)
     mycursor.execute(sql, val)
 
-    #print(str(mycursor.rowcount) + name)
+    print(str(mycursor.rowcount) + name)
     result = mycursor.fetchone()
 
     if result is not None:
@@ -198,7 +186,7 @@ def auth_user(signature, name):
         with open('client_keys/' + pk_name, 'rb') as key_file:
             public_key = serialization.load_pem_public_key(
                 key_file.read(),
-                #backend=default_backend()
+                backend=default_backend()
             )
 
         # abrir e ler o nonce criado para a autenticação desse user da diretoria auth_nonce
@@ -210,12 +198,13 @@ def auth_user(signature, name):
         nonce = contents
 
         # verificar assinatura com pk do user
-        print("Checking nonce signature")
         try:
             public_key.verify(
                 signature,
                 nonce.encode('utf-8'),
-                ec.ECDSA(hashes.SHA256())
+                padding.PSS(mgf=padding.MGF1(hashes.SHA256()),salt_length=padding.PSS.MAX_LENGTH),
+                hashes.SHA256()
+                #ec.ECDSA(hashes.SHA256())
             )
             return "1"  # Signature is valid
         except Exception as e:
@@ -257,7 +246,7 @@ def register_user(name, password, pk, path):
 @app.route('/auth', methods=['POST'])
 def auth():
     data = request.form
-    print("Atempting authentication")
+
     result = auth_user(data['key1'].encode('latin-1'), data['key2'])
     return result
 
@@ -281,13 +270,13 @@ def register():
     data = request.form
 
     # abrir sk do server
-    with open('Ecc-keys/private_key.pem', 'rb') as key_file:
+    with open('RSA-keys/private_key.pem', 'rb') as key_file:
         private_key = serialization.load_pem_private_key(
             key_file.read(),
             password=None,
             backend=default_backend()
         )
-    """
+
     # desencryptar com sk do server
     username = private_key.decrypt(
         # e temos de voltar a codificar para "binario" com latin-1
@@ -297,9 +286,8 @@ def register():
             algorithm=hashes.SHA256(),
             label=None
         )
-    )"""
-    username = data['key1']
-    """
+    )
+    
     password = private_key.decrypt(
         data['key2'].encode('latin-1'),
         padding.OAEP(
@@ -308,10 +296,8 @@ def register():
             label=None
         )
     )
-    """
-    password = data['key2']
     
-    """
+
     path = private_key.decrypt(
         data['key3'].encode('latin-1'),
         padding.OAEP(
@@ -320,18 +306,17 @@ def register():
             label=None
         )
     )
-    """
-    path = data['key3']
 
     # receber o pk do user
     file = request.files['file']
     # o nome do ficheiro fica usernamepk.pem
-    filename = username + 'pk.pem'
+    filename = username.decode('utf-8') + 'pk.pem'
     # vai para a diretoria do server, na subdiretoria client_keys
     file.save('client_keys/' + filename)
 
     # enviar os dados para a função que guarda os dados na bd
-    result = register_user(username, password, filename, path)
+    result = register_user(username.decode(
+        'utf-8'), password.decode('utf-8'), filename, path.decode('utf-8'))
     return result
 
 

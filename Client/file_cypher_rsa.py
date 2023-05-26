@@ -8,7 +8,6 @@ from Crypto.Cipher import AES
 from Crypto.Util import Counter
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import hashes
-import shutil
 class EncryptionClass():
 
     def __init__(self, globalValues):
@@ -202,22 +201,26 @@ class EncryptionClass():
                 data = f.read(self.CHUNK_SIZE)
     """
 
-    def checkSignature(self, file, sig_file, pk):
+    def checkSignature(self, file, sig_file):
+        print("CHECKING SIGNATURE")
+        print(file)
+        print(sig_file)
         with open(sig_file, 'rb') as sig_file:
             signature = sig_file.read()
             hash = self.fileHash(file)
             print(hash)
             try:
-                pk.verify(
+                self.server_pk.verify(
                     signature,
-                    hash.encode('utf-8'),
+                    hash,
                     padding.PSS(
                         mgf=padding.MGF1(hashes.SHA256()),
                         salt_length=padding.PSS.MAX_LENGTH
                     ),
                     hashes.SHA256()
                 )
-            except:
+            except Exception as e:
+                print(e)
                 return False
                 
             return True
