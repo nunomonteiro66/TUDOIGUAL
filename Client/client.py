@@ -254,7 +254,7 @@ def sendFile(file):
     data = {
         'key1': file, 
         #'key2': open(file_full_path, 'rb').read(),
-        #'key3': Encclass.fileHash(file).decode('latin-1'),
+        'key3': Encclass.fileHash(file).decode('latin-1'),
         #'key4': ctpk.decode('latin-1'),
         'key5': globalValues['username'],
         #'key6': nonce.decode('latin-1'),
@@ -290,11 +290,20 @@ def checkNewFilesInServer():
         #save zip
         with open(globalValues['sync_dir']+"/"+file+".zip", 'wb') as f:
             f.write(response.content)
-        
 
         #unzip file
         with zipfile.ZipFile(globalValues['sync_dir']+"/"+file+".zip", 'r') as zip_ref:
             zip_ref.extractall(globalValues['sync_dir'])
+
+        if globalValues['sync_dir']+"/hash.txt" == Encclass.fileHash(globalValues['sync_dir']+"/"+file+".zip"):
+            print("File hash verification successful.")
+        else:
+            print('File hash verification failed.')
+            os.remove(globalValues['sync_dir']+"/"+file+".zip")
+            os.remove(globalValues['sync_dir']+"/"+file+".key")
+            os.remove(globalValues['sync_dir']+"/"+file+".sig")
+            os.remove(globalValues['sync_dir']+"/hash.txt")
+            return
 
         #verify signature
         check = Encclass.checkSignature(file, globalValues['sync_dir']+"/"+file+".sig")
@@ -305,6 +314,7 @@ def checkNewFilesInServer():
             os.remove(globalValues['sync_dir']+"/"+file+".zip")
             os.remove(globalValues['sync_dir']+"/"+file+".key")
             os.remove(globalValues['sync_dir']+"/"+file+".sig")
+            os.remove(globalValues['sync_dir'] + "/hash.txt")
             return
         
         #move keys to the keys directory

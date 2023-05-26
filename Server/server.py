@@ -55,8 +55,6 @@ def checkFiles():
     return '|'.join(files_missing)
 
 
-
-
 #sends the requested file to the user
 @app.route('/getFile', methods=['POST'])
 def getFile():
@@ -67,20 +65,16 @@ def getFile():
     
     #decrypt the keyfile and encrypt it with the user public key
     decAndEnc(file, username)
-    
-
-    
-
-    
     #create zip file
     with ZipFile(".tmp/"+file+".zip", 'w') as zipObj:
         zipObj.write(".tmp/"+file+".key", file+".key")
         zipObj.write("files/"+file, file)
         zipObj.write(".signatures/"+file+".sig", file+".sig")
 
-    
+    zip_hash = fileHash(".tmp/"+file+".zip")
 
-   
+    with ZipFile(".tmp/"+file+".zip", 'a') as zipObj:
+        zipObj.writestr(".tmp/hash.txt", zip_hash)
     
     #delete tmp files 
     os.remove(".tmp/"+file+".key")
@@ -120,19 +114,24 @@ def sendFile():
     keyfile = request.files['keyfile']
 
     # é necessário verificar o hash do ficheiro
+    calculated_hash = fileHash(os.path.join('files', data['key1']))
+    expected_hash = data['key3']
+    if calculated_hash == expected_hash:
+        print("File hash verification successful.")
+    else:
+        print('File hash verification failed.')
+        return
 
     # Save the file to a desired location on the server
     file.save('files/'+data['key1'])
     keyfile.save('files/'+data['key1']+".key")
 
     # é necessario calcular a assinatura do ficheiro pelo hash
-    hash = fileHash(os.path.join('files', data['key1']))
-    signature = sign_file(hash)
-    
+    signature = sign_file(calculated_hash)
 
     print("====================================")
     print("Hash")
-    print(hash)
+    print(calculated_hash)
     
     """
     #save the nounce and the decryption key
