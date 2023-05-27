@@ -294,14 +294,17 @@ def checkNewFilesInServer():
         with zipfile.ZipFile(globalValues['sync_dir']+"/"+file+".zip", 'r') as zip_ref:
             zip_ref.extractall(globalValues['sync_dir'])
 
-        if globalValues['sync_dir']+"/.tmp/hash.txt" == Encclass.fileHash("sync/"+file+".zip"):
+        with open(globalValues['sync_dir']+"/hash.txt", 'rb') as f:
+            hash = f.read()
+        if hash == Encclass.fileHash(file):
             print("File hash verification successful.")
         else:
             print('File hash verification failed.')
             os.remove(globalValues['sync_dir']+"/"+file+".zip")
             os.remove(globalValues['sync_dir']+"/"+file+".key")
             os.remove(globalValues['sync_dir']+"/"+file+".sig")
-            os.remove(globalValues['sync_dir']+"/hash.txt")
+            #os.remove(globalValues['sync_dir']+"/hash.txt")
+            os.remove(globalValues['sync_dir']+"/"+file)
             return
 
         #verify signature
@@ -324,6 +327,7 @@ def checkNewFilesInServer():
 
         #remove the zip file
         os.remove(globalValues['sync_dir']+"/"+file+".zip")
+        os.remove(globalValues['sync_dir'] + "/hash.txt")
 
 
 LoginForm()
@@ -361,9 +365,12 @@ if __name__ == '__main__':
     #pk = loadPublicKey()
 
     #encrypt dos ficheiros da diretoria
-    sync_path = "sync"
-    if not os.path.exists(sync_path):
-        os.makedirs(sync_path)
+    sync_path = globalValues['sync_dir']
+    #sync_files_txt = "sync_files.txt" #file that will keep record of all the files in the sync directory
+
+    #if not os.path.exists(sync_path): os.makedirs(sync_path)
+
+    #if not os.path.
     allFiles1 = set(os.listdir(sync_path))
     while(True):
         allFiles2 = set(os.listdir(sync_path))
