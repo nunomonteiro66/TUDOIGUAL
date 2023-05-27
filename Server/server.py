@@ -1,287 +1,94 @@
+import shutil
 import time
 from flask import Flask, request, jsonify, send_file, send_from_directory
+import mysql.connector
 from concurrent.futures import ThreadPoolExecutor
-
+import bcrypt
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.backends import default_backend
+import secrets
 from cryptography.hazmat.primitives.asymmetric import ec
 import os
-#from cyphers_util import decryptKey, loadClientPk, encryptKey, encryptZipFile, fileHash
+# from cyphers_util import decryptKey, loadClientPk, encryptKey, encryptZipFile, fileHash
 from utils import decAndEnc, fileHash
 from zipfile import ZipFile
 import hashlib
 
-from dbhelper.dbcontrol import *
-from utils.auth import *
-
-
-
 app = Flask(__name__)
-
-db = DBControl()
-appAuth = AppAuthenticationServer()
-
-
-@app.route("/auth/hmac", method=["GET"])
-def getHMACKey():
-    """
-    * Description: Gets HMAC Key.
-    * Endpoint:    `/auth/hmac`
-    * HTTP Method: ``GET``
-    
-    Possible Success:
-    * `{"success" : (str)}` - Returns HMAC.
-    
-    Possible Errors:
-    * `{"error" : "Unknown Error"}`                    - Exception 
-    * `{"error" : "Unknown error authenticating app"}` - Unable to authenticate the app
-    * `{"error" : "Username not found"}`               - UsernameNotFound
-    * `{"error" : "Wrong passowrd"}`                   - WrongPassword
-    """
-    try:
-        ok = appAuth.authenticateApp(request.headers, request.method)
-        if not ok:
-            return json.dumps({ "error": "Unknown error authenticating app" })
-    except (ConnectionNotEstablished, InvalidAppAuthenticationChallenge, AppAuthHeaderNotFound) as ex:
-        return json.dumps({ "error": ex.message })
-    
-    try:
-        return json.dumps({"success" : db.getHMACKey()})
-    except Exception as ex:
-        return json.dumps({"error" : str(ex)})
-
-
-@app.route("/auth/login", methods=['POST'])
-def login():
-    """
-    * Description: Authenticates a User using `username` and `password` combination.
-    * Endpoint:    `/auth/login`
-    * HTTP Method: ``POST``
-    
-    Possible Success:
-    * `{"success" : { "user_id" : user_id }}` - Returns dictionary with the user_id.
-    
-    Possible Errors:
-    * `{"error" : "Unknown Error"}`                    - Exception 
-    * `{"error" : "Unknown error authenticating app"}` - Unable to authenticate the app
-    * `{"error" : "Username not found"}`               - UsernameNotFound
-    * `{"error" : "Wrong passowrd"}`                   - WrongPassword
-    """
-    try:
-        ok = appAuth.authenticateApp(request.headers, request.method, dict(request.form))
-        if not ok:
-            return json.dumps({ "error": "Unknown error authenticating app" })
-    except (ConnectionNotEstablished, InvalidAppAuthenticationChallenge, AppAuthHeaderNotFound) as ex:
-        return json.dumps({ "error": ex.message })
-    
-    username = request.form['username']
-    password = request.form['password']
-    try:
-        (ok, user_id) = db.loginUser(username, password)
-        if ok:
-            return json.dumps({ "success": { "user_id": user_id } })
-        else:
-            return json.dumps({ "error": "Unknown Error" })
-    except (UsernameNotFound, WrongPassword) as ex:
-        return json.dumps({ "error": ex.message })
-    
-    
-@app.route("/auth/signup", methods=['POST'])
-def signup():
-    """
-    * Description: Creates a new User using `username`, `email`, `password` combination.
-    * Endpoint:    `/auth/signup`
-    * HTTP Method: ``POST``
-    
-    Possible Success:
-    * `{"success" : { "user_id" : user_id }}` - Returns dictionary with the user_id.
-    
-    Possible Errors:
-    * `{"error" : "Unknown Error"}`                    - Exception 
-    * `{"error" : "Unknown error authenticating app"}` - Unable to authenticate the app
-    * `{"error" : "Username not found"}`               - UsernameNotFound
-    * `{"error" : "Wrong passowrd"}`                   - WrongPassword
-    """
-    try:
-        ok = appAuth.authenticateApp(request.headers, request.method, dict(request.form))
-        if not ok:
-            return json.dumps({ "error": "Unknown error authenticating app" })
-    except (ConnectionNotEstablished, InvalidAppAuthenticationChallenge, AppAuthHeaderNotFound) as ex:
-        return json.dumps({ "error": ex.message })
-    
-    username = request.form['username']
-    password = request.form['password']
-    email = request.form['email']
-    ok = db.registerUser(username, password, email)
-    if ok:
-        return json.dumps({"success": True})
-    else:
-        return json.dumps({"error": "Unable to register user"})
-
-
-@app.route("/auth/user", methods=['POST'])
-def userExists():
-    """
-    * Description: Checks if a username is already in use.
-    * Endpoint:    `/auth/user`
-    * HTTP Method: ``POST``
-    
-    Possible Success:
-    * `{ "success" : (bool) }` - Returns True IF `username` exists ELSE False.
-    
-    Possible Errors:
-    * `{"error" : "Unknown Error"}`                        - Exception
-    * `{"error" : "Unknown error authenticating app"}`     - Unable to Authenticate the App
-    * `{"error" : "Connection not established"}`           - ConnectionNotEstablished
-    * `{"error" : "Invalid App Authentication Challenge"}` - InvalidAppAuthenticationChallenge
-    * `{"error" : "App Auth Header Not Found"}`            - AppAuthHeaderNotFound
-    """
-    try:
-        ok = appAuth.authenticateApp(request.headers, request.method, dict(request.form))
-        if not ok:
-            return json.dumps({ "error": "Unknown error authenticating app" })
-    except (ConnectionNotEstablished, InvalidAppAuthenticationChallenge, AppAuthHeaderNotFound) as ex:
-        return json.dumps({ "error": ex.message })
-    
-    username = request.form['username']
-    ok = db.userExists(username)
-    return json.dumps({"success": ok})
-
-
-@app.route("/auth/email", methods=['POST'])
-def emailExists():
-    """
-    * Description: Checks if an email is already in use.
-    * Endpoint:    `/auth/email`
-    * HTTP Method: ``POST``
-    
-    Possible Success:
-    * `{ "success" : (bool) }` - Returns True if `email` exists else False.
-    
-    Possible Errors:
-    * `{"error" : "Unknown Error"}`                        - Exception 
-    * `{"error" : "Unknown error authenticating app"}`     - Unable to Authenticate the App
-    * `{"error" : "Connection not established"}`           - ConnectionNotEstablished
-    * `{"error" : "Invalid App Authentication Challenge"}` - InvalidAppAuthenticationChallenge
-    * `{"error" : "App Auth Header Not Found"}`            - AppAuthHeaderNotFound
-    """
-    try:
-        ok = appAuth.authenticateApp(request.headers, request.method, dict(request.form))
-        if not ok:
-            return json.dumps({ "error": "Unknown error authenticating app" })
-    except (ConnectionNotEstablished, InvalidAppAuthenticationChallenge, AppAuthHeaderNotFound) as ex:
-        return json.dumps({ "error": ex.message })
-    
-    email = request.form['email']
-    ok = db.emailExists(email)
-    return json.dumps({"success": ok})
-
-
-@app.route("/user/email/", methods=['GET'])
-def getEmail():
-    """
-    * Description: Gets the email of an user using `user_id` as `id`.
-    * Endpoint:    `/user/email`
-    * HTTP Method: ``GET``
-    
-    Possible Success:
-    * `{ "success" : (str) }` - Returns the email.
-    
-    Possible Errors:
-    * `{"error" : "Unknown Error"}`                        - Exception 
-    * `{"error" : "Unable to fetch email"}`                - Unable to fetch email
-    * `{"error" : "Unknown error authenticating app"}`     - Unable to authenticate the app
-    * `{"error" : "Connection not established"}`           - ConnectionNotEstablished
-    * `{"error" : "Invalid App Authentication Challenge"}` - InvalidAppAuthenticationChallenge
-    * `{"error" : "App Auth Header Not Found"}`            - AppAuthHeaderNotFound
-    """
-    try:
-        ok = appAuth.authenticateApp(request.headers, request.method)
-        if not ok:
-            return json.dumps({ "error": "Unknown error authenticating app" })
-    except (ConnectionNotEstablished, InvalidAppAuthenticationChallenge, AppAuthHeaderNotFound) as ex:
-        return json.dumps({ "error": ex.message })
-    
-    userid = request.args.get('id')
-    email = db.getEmail(userid)
-    if email is None:
-        return json.dumps({"error": "Unable to fetch email"})
-    else:
-        return json.dumps({"success": email})
-
 
 # create a database connection
 mydb = mysql.connector.connect(
     host="localhost",
     user="root",
     password="1234",
-    database="tudoigual"
+    database="new_schema"
 )
 
 mycursor = mydb.cursor()
 executor = ThreadPoolExecutor()
 
+
 # endpoint para verificar ficheiros em falta para cliente: necessita de username
 
-#sends the name of the files missing in the user machine, so that he can ask them after
+# sends the name of the files missing in the user machine, so that he can ask them after
 @app.route('/checkFiles', methods=['POST'])
 def checkFiles():
-
-    #delete tmp files
+    # delete tmp files
     for file in os.listdir(".tmp"):
-        os.remove(".tmp/"+file)
+        os.remove(".tmp/" + file)
 
     print('checkFiles')
     files_missing = []
     data = request.form
     for file in os.listdir('client_files'):
-        users_missing = open('client_files/'+file, 'r').read().splitlines()                 # list of users that need to receive the file
-        if(data['key1'] in users_missing):                                                  # user is missing the file
-            files_missing.append(file)                                                      # add file to the list of files missing
-            users_missing.remove(data['key1'])                                              # remove user from the list of users missing the file
-            with open('client_files/'+file, 'w') as f: f.write('\n'.join(users_missing))    # update the file
-            continue                                                                        # continue to next file
+
+        users_missing = open('client_files/' + file,
+                             'r').read().splitlines()  # list of users that need to receive the file
+        if (data['key1'] in users_missing):  # user is missing the file
+            files_missing.append(file)  # add file to the list of files missing
+            users_missing.remove(data['key1'])  # remove user from the list of users missing the file
+            with open('client_files/' + file, 'w') as f: f.write('\n'.join(users_missing))  # update the file
+            continue  # continue to next file
     print(files_missing)
     return '|'.join(files_missing)
 
 
-#sends the requested file to the user
+# sends the requested file to the user
 @app.route('/getFile', methods=['POST'])
 def getFile():
     print("SENDING THE FILE TO THE USER")
     data = request.form
-    file = data['key1'] #filename
-    username = data['key2'] #username
-    
-    #decrypt the keyfile and encrypt it with the user public key
+    file = data['key1']  # filename
+    username = data['key2']  # username
+
+    # decrypt the keyfile and encrypt it with the user public key
     decAndEnc(file, username)
-    #create zip file
-    with ZipFile(".tmp/"+file+".zip", 'w') as zipObj:
-        zipObj.write(".tmp/"+file+".key", file+".key")
-        zipObj.write("files/"+file, file)
-        zipObj.write(".signatures/"+file+".sig", file+".sig")
+    # create zip file
+    with ZipFile(".tmp/" + file + ".zip", 'w') as zipObj:
+        zipObj.write(".tmp/" + file + ".key", file + ".key")
+        zipObj.write("files/" + file, file)
+        zipObj.write(".signatures/" + file + ".sig", file + ".sig")
 
+    zip_hash = fileHash(".tmp/" + file + ".zip")
 
-    with ZipFile(".tmp/"+file+".zip", 'a') as zipObj:
-        zipObj.writestr(".tmp/hash.txt", fileHash(".tmp/"+file+".zip").decode('latin-1'))
-    
-    #delete tmp files 
-    os.remove(".tmp/"+file+".key")
-    #os.remove(".tmp/"+file+".zip")
+    with ZipFile(".tmp/" + file + ".zip", 'a') as zipObj:
+        zipObj.writestr(".tmp/hash.txt", zip_hash)
 
-    #send the zip file
-    return send_file(f".tmp/{filename}.zip", as_attachment=True)
-    
+    # delete tmp files
+    os.remove(".tmp/" + file + ".key")
+    # os.remove(".tmp/"+file+".zip")
+
+    # send the zip file
+    return send_file(".tmp/" + file + ".zip", as_attachment=True)
 
 
 def sign_file(hash):
-
     with open('Ecc-keys/private_key.pem', 'rb') as key_file:
         private_key = serialization.load_pem_private_key(
             key_file.read(),
             password=None,
-            #backend=default_backend()
+            # backend=default_backend()
         )
 
     # Sign the message with the private key
@@ -293,20 +100,20 @@ def sign_file(hash):
     # Return the signature as bytes
     return signature
 
+
 # endpoint para enviar ficheiros do cliente para o servidor: necessita de filename, file, hash do file, chave para desencriptar por esta ordem, username
 
 
 @app.route('/sendFile', methods=['POST'])
 def sendFile():
     data = request.form
+
     file = request.files['file']
     keyfile = request.files['keyfile']
 
-    file.save('files/' + data['key1'])
-
     # é necessário verificar o hash do ficheiro
     calculated_hash = fileHash(os.path.join('files', data['key1']))
-    expected_hash = data['key3'].encode('latin-1')
+    expected_hash = data['key3']
     if calculated_hash == expected_hash:
         print("File hash verification successful.")
     else:
@@ -314,7 +121,8 @@ def sendFile():
         return
 
     # Save the file to a desired location on the server
-    keyfile.save('files/'+data['key1']+".key")
+    file.save('files/' + data['key1'])
+    keyfile.save('files/' + data['key1'] + ".key")
 
     # é necessario calcular a assinatura do ficheiro pelo hash
     signature = sign_file(calculated_hash)
@@ -322,7 +130,7 @@ def sendFile():
     print("====================================")
     print("Hash")
     print(calculated_hash)
-    
+
     """
     #save the nounce and the decryption key
     with open('files/'+data['key1']+'.key', 'wb') as f:
@@ -343,29 +151,29 @@ def sendFile():
         #AESkey.update(sharedECCkey_y.to_bytes(KEY_SIZE, byteorder='big'))
         AESkey = AESkey.digest()
         f.write(AESkey) #shared key
-    
+
 
     print("Encrypted key with server")
     print(data['key4'].encode('latin-1'))    
     """
     # colocar ficheiro em falta para todos os users excepto no user que coloca o file
 
-    #create file with the name of the file received
-    if not os.path.isfile(f'client_files/{data["key1"]}'):
-        file = open(f'client_files/{data["key1"]}', 'w') 
+    # create file with the name of the file received
+    if not os.path.isfile('client_files/' + data['key1']):
+        file = open('client_files/' + data['key1'], 'w')
     else:
-        file = open(f'client_files/{data["key1"]}', 'a')
+        file = open('client_files/' + data['key1'], 'a')
 
     for filename in os.listdir('client_keys'):
         username = filename.split('pk')[0]
-        if(username == data['key7']): #current user
+        if (username == data['key7']):  # current user
             continue
-        file.write(username) #wrtie the user as missing the file
+        file.write(username)  # wrtie the user as missing the file
         file.write('\n')
     file.close()
 
-    #save signature
-    with open(f".signatures/{data['key1']}.sig", 'wb') as sig_file:
+    # save signature
+    with open(".signatures/" + data['key1'] + ".sig", 'wb') as sig_file:
         sig_file.write(signature)
 
     return signature.decode('latin-1')
@@ -377,7 +185,7 @@ def auth_user(signature, name):
     val = (name,)
     mycursor.execute(sql, val)
 
-    #print(str(mycursor.rowcount) + name)
+    # print(str(mycursor.rowcount) + name)
     result = mycursor.fetchone()
 
     if result is not None:
@@ -387,7 +195,7 @@ def auth_user(signature, name):
         with open('client_keys/' + pk_name, 'rb') as key_file:
             public_key = serialization.load_pem_public_key(
                 key_file.read(),
-                #backend=default_backend()
+                # backend=default_backend()
             )
 
         # abrir e ler o nonce criado para a autenticação desse user da diretoria auth_nonce
@@ -409,7 +217,7 @@ def auth_user(signature, name):
             return "1"  # Signature is valid
         except Exception as e:
             print(e)
-            return "0" # Signature is invalid
+            return "0"  # Signature is invalid
 
     else:
         return "0"
@@ -433,7 +241,7 @@ def register_user(name, password, pk, path):
         mydb.commit()
 
         if mycursor.rowcount == 1:
-            file = open("client_files/"+name+".txt", 'w')
+            file = open("client_files/" + name + ".txt", 'w')
             file.close()
             return "Registo bem sucedido!"
         else:
@@ -499,7 +307,7 @@ def register():
     )
     """
     password = data['key2']
-    
+
     """
     path = private_key.decrypt(
         data['key3'].encode('latin-1'),
@@ -525,4 +333,4 @@ def register():
 
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0",debug=True)
+    app.run(host="0.0.0.0", debug=True)
