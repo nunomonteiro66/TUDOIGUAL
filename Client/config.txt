@@ -1,1 +1,0 @@
-{"username": "test", "password": "test", "sync_dir": "sync", "server_keys": "./.server_keys", "signature_dir": "./.signatures", "client_keys": "./.client_keys", "keys_dir": "./.keys"}
