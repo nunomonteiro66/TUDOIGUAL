@@ -68,6 +68,8 @@ def MakeConfigFile():
         os.makedirs(globalValues['keys_dir'])
     if not os.path.exists(globalValues['sync_dir']):
         os.makedirs(globalValues['sync_dir'])
+    if not os.path.exists('./.tmp'):
+        os.makedirs('./.tmp')
 
 
 def LoadConfigFile():
@@ -338,9 +340,7 @@ if __name__ == '__main__':
         MakeConfigFile() #create config file with default values, and load them
         Encclass = EncryptionClass(globalValues)
         Register()
-        if not os.path.exists('.client_keys/client_private_key.pem'):
-            # gen_client_ECC_keys()
-            Encclass.gen_client_ECC_keys(globalValues['client_keys'])
+        
     else:
         LoadConfigFile() #loads global values from the config file
         Encclass = EncryptionClass(globalValues)
@@ -349,6 +349,8 @@ if __name__ == '__main__':
 
 
     auth = Authentication()
+    print("AUTH")
+    print(auth)
     if(auth != "1"):
         print("Authentication failed")
         exit()
