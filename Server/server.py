@@ -1,13 +1,10 @@
-import shutil
 import time
 from flask import Flask, request, jsonify, send_file, send_from_directory
-import mysql.connector
 from concurrent.futures import ThreadPoolExecutor
-import bcrypt
+
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.backends import default_backend
-import secrets
 from cryptography.hazmat.primitives.asymmetric import ec
 import os
 #from cyphers_util import decryptKey, loadClientPk, encryptKey, encryptZipFile, fileHash
@@ -15,9 +12,204 @@ from utils import decAndEnc, fileHash
 from zipfile import ZipFile
 import hashlib
 
+from dbhelper.dbcontrol import *
+from utils.auth import *
+
 
 
 app = Flask(__name__)
+
+db = DBControl()
+appAuth = AppAuthenticationServer()
+
+
+@app.route("/auth/hmac", method=["GET"])
+def getHMACKey():
+    """
+    * Description: Gets HMAC Key.
+    * Endpoint:    `/auth/hmac`
+    * HTTP Method: ``GET``
+    
+    Possible Success:
+    * `{"success" : (str)}` - Returns HMAC.
+    
+    Possible Errors:
+    * `{"error" : "Unknown Error"}`                    - Exception 
+    * `{"error" : "Unknown error authenticating app"}` - Unable to authenticate the app
+    * `{"error" : "Username not found"}`               - UsernameNotFound
+    * `{"error" : "Wrong passowrd"}`                   - WrongPassword
+    """
+    try:
+        ok = appAuth.authenticateApp(request.headers, request.method)
+        if not ok:
+            return json.dumps({ "error": "Unknown error authenticating app" })
+    except (ConnectionNotEstablished, InvalidAppAuthenticationChallenge, AppAuthHeaderNotFound) as ex:
+        return json.dumps({ "error": ex.message })
+    
+    try:
+        return json.dumps({"success" : db.getHMACKey()})
+    except Exception as ex:
+        return json.dumps({"error" : str(ex)})
+
+
+@app.route("/auth/login", methods=['POST'])
+def login():
+    """
+    * Description: Authenticates a User using `username` and `password` combination.
+    * Endpoint:    `/auth/login`
+    * HTTP Method: ``POST``
+    
+    Possible Success:
+    * `{"success" : { "user_id" : user_id }}` - Returns dictionary with the user_id.
+    
+    Possible Errors:
+    * `{"error" : "Unknown Error"}`                    - Exception 
+    * `{"error" : "Unknown error authenticating app"}` - Unable to authenticate the app
+    * `{"error" : "Username not found"}`               - UsernameNotFound
+    * `{"error" : "Wrong passowrd"}`                   - WrongPassword
+    """
+    try:
+        ok = appAuth.authenticateApp(request.headers, request.method, dict(request.form))
+        if not ok:
+            return json.dumps({ "error": "Unknown error authenticating app" })
+    except (ConnectionNotEstablished, InvalidAppAuthenticationChallenge, AppAuthHeaderNotFound) as ex:
+        return json.dumps({ "error": ex.message })
+    
+    username = request.form['username']
+    password = request.form['password']
+    try:
+        (ok, user_id) = db.loginUser(username, password)
+        if ok:
+            return json.dumps({ "success": { "user_id": user_id } })
+        else:
+            return json.dumps({ "error": "Unknown Error" })
+    except (UsernameNotFound, WrongPassword) as ex:
+        return json.dumps({ "error": ex.message })
+    
+    
+@app.route("/auth/signup", methods=['POST'])
+def signup():
+    """
+    * Description: Creates a new User using `username`, `email`, `password` combination.
+    * Endpoint:    `/auth/signup`
+    * HTTP Method: ``POST``
+    
+    Possible Success:
+    * `{"success" : { "user_id" : user_id }}` - Returns dictionary with the user_id.
+    
+    Possible Errors:
+    * `{"error" : "Unknown Error"}`                    - Exception 
+    * `{"error" : "Unknown error authenticating app"}` - Unable to authenticate the app
+    * `{"error" : "Username not found"}`               - UsernameNotFound
+    * `{"error" : "Wrong passowrd"}`                   - WrongPassword
+    """
+    try:
+        ok = appAuth.authenticateApp(request.headers, request.method, dict(request.form))
+        if not ok:
+            return json.dumps({ "error": "Unknown error authenticating app" })
+    except (ConnectionNotEstablished, InvalidAppAuthenticationChallenge, AppAuthHeaderNotFound) as ex:
+        return json.dumps({ "error": ex.message })
+    
+    username = request.form['username']
+    password = request.form['password']
+    email = request.form['email']
+    ok = db.registerUser(username, password, email)
+    if ok:
+        return json.dumps({"success": True})
+    else:
+        return json.dumps({"error": "Unable to register user"})
+
+
+@app.route("/auth/user", methods=['POST'])
+def userExists():
+    """
+    * Description: Checks if a username is already in use.
+    * Endpoint:    `/auth/user`
+    * HTTP Method: ``POST``
+    
+    Possible Success:
+    * `{ "success" : (bool) }` - Returns True IF `username` exists ELSE False.
+    
+    Possible Errors:
+    * `{"error" : "Unknown Error"}`                        - Exception
+    * `{"error" : "Unknown error authenticating app"}`     - Unable to Authenticate the App
+    * `{"error" : "Connection not established"}`           - ConnectionNotEstablished
+    * `{"error" : "Invalid App Authentication Challenge"}` - InvalidAppAuthenticationChallenge
+    * `{"error" : "App Auth Header Not Found"}`            - AppAuthHeaderNotFound
+    """
+    try:
+        ok = appAuth.authenticateApp(request.headers, request.method, dict(request.form))
+        if not ok:
+            return json.dumps({ "error": "Unknown error authenticating app" })
+    except (ConnectionNotEstablished, InvalidAppAuthenticationChallenge, AppAuthHeaderNotFound) as ex:
+        return json.dumps({ "error": ex.message })
+    
+    username = request.form['username']
+    ok = db.userExists(username)
+    return json.dumps({"success": ok})
+
+
+@app.route("/auth/email", methods=['POST'])
+def emailExists():
+    """
+    * Description: Checks if an email is already in use.
+    * Endpoint:    `/auth/email`
+    * HTTP Method: ``POST``
+    
+    Possible Success:
+    * `{ "success" : (bool) }` - Returns True if `email` exists else False.
+    
+    Possible Errors:
+    * `{"error" : "Unknown Error"}`                        - Exception 
+    * `{"error" : "Unknown error authenticating app"}`     - Unable to Authenticate the App
+    * `{"error" : "Connection not established"}`           - ConnectionNotEstablished
+    * `{"error" : "Invalid App Authentication Challenge"}` - InvalidAppAuthenticationChallenge
+    * `{"error" : "App Auth Header Not Found"}`            - AppAuthHeaderNotFound
+    """
+    try:
+        ok = appAuth.authenticateApp(request.headers, request.method, dict(request.form))
+        if not ok:
+            return json.dumps({ "error": "Unknown error authenticating app" })
+    except (ConnectionNotEstablished, InvalidAppAuthenticationChallenge, AppAuthHeaderNotFound) as ex:
+        return json.dumps({ "error": ex.message })
+    
+    email = request.form['email']
+    ok = db.emailExists(email)
+    return json.dumps({"success": ok})
+
+
+@app.route("/user/email/", methods=['GET'])
+def getEmail():
+    """
+    * Description: Gets the email of an user using `user_id` as `id`.
+    * Endpoint:    `/user/email`
+    * HTTP Method: ``GET``
+    
+    Possible Success:
+    * `{ "success" : (str) }` - Returns the email.
+    
+    Possible Errors:
+    * `{"error" : "Unknown Error"}`                        - Exception 
+    * `{"error" : "Unable to fetch email"}`                - Unable to fetch email
+    * `{"error" : "Unknown error authenticating app"}`     - Unable to authenticate the app
+    * `{"error" : "Connection not established"}`           - ConnectionNotEstablished
+    * `{"error" : "Invalid App Authentication Challenge"}` - InvalidAppAuthenticationChallenge
+    * `{"error" : "App Auth Header Not Found"}`            - AppAuthHeaderNotFound
+    """
+    try:
+        ok = appAuth.authenticateApp(request.headers, request.method)
+        if not ok:
+            return json.dumps({ "error": "Unknown error authenticating app" })
+    except (ConnectionNotEstablished, InvalidAppAuthenticationChallenge, AppAuthHeaderNotFound) as ex:
+        return json.dumps({ "error": ex.message })
+    
+    userid = request.args.get('id')
+    email = db.getEmail(userid)
+    if email is None:
+        return json.dumps({"error": "Unable to fetch email"})
+    else:
+        return json.dumps({"success": email})
+
 
 # create a database connection
 mydb = mysql.connector.connect(
@@ -44,13 +236,12 @@ def checkFiles():
     files_missing = []
     data = request.form
     for file in os.listdir('client_files'):
-        
-        users_missing = open('client_files/'+file, 'r').read().splitlines() #list of users that need to receive the file
-        if(data['key1'] in users_missing): #user is missing the file
-            files_missing.append(file) #add file to the list of files missing
-            users_missing.remove(data['key1']) #remove user from the list of users missing the file
-            with open('client_files/'+file, 'w') as f: f.write('\n'.join(users_missing)) #update the file
-            continue #continue to next file
+        users_missing = open('client_files/'+file, 'r').read().splitlines()                 # list of users that need to receive the file
+        if(data['key1'] in users_missing):                                                  # user is missing the file
+            files_missing.append(file)                                                      # add file to the list of files missing
+            users_missing.remove(data['key1'])                                              # remove user from the list of users missing the file
+            with open('client_files/'+file, 'w') as f: f.write('\n'.join(users_missing))    # update the file
+            continue                                                                        # continue to next file
     print(files_missing)
     return '|'.join(files_missing)
 
@@ -81,7 +272,7 @@ def getFile():
     #os.remove(".tmp/"+file+".zip")
 
     #send the zip file
-    return send_file(".tmp/"+file+".zip", as_attachment=True)
+    return send_file(f".tmp/{filename}.zip", as_attachment=True)
     
 
 
@@ -109,7 +300,6 @@ def sign_file(hash):
 @app.route('/sendFile', methods=['POST'])
 def sendFile():
     data = request.form
-
     file = request.files['file']
     keyfile = request.files['keyfile']
 
@@ -161,10 +351,10 @@ def sendFile():
     # colocar ficheiro em falta para todos os users excepto no user que coloca o file
 
     #create file with the name of the file received
-    if not os.path.isfile('client_files/'+data['key1']):
-        file = open('client_files/'+data['key1'], 'w') 
+    if not os.path.isfile(f'client_files/{data["key1"]}'):
+        file = open(f'client_files/{data["key1"]}', 'w') 
     else:
-        file = open('client_files/'+data['key1'], 'a')
+        file = open(f'client_files/{data["key1"]}', 'a')
 
     for filename in os.listdir('client_keys'):
         username = filename.split('pk')[0]
@@ -175,7 +365,7 @@ def sendFile():
     file.close()
 
     #save signature
-    with open(".signatures/"+data['key1']+".sig", 'wb') as sig_file:
+    with open(f".signatures/{data['key1']}.sig", 'wb') as sig_file:
         sig_file.write(signature)
 
     return signature.decode('latin-1')
