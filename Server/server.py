@@ -21,8 +21,8 @@ app = Flask(__name__)
 mydb = mysql.connector.connect(
     host="localhost",
     user="root",
-    password="1234",
-    database="tudoigual"
+    password="2586",
+    database="tudoigual_db"
 )
 
 mycursor = mydb.cursor()
@@ -264,6 +264,12 @@ def authNonce():
     data = request.form
     random_number = secrets.randbits(128)
 
+    # Check if the directory exists
+    if not os.path.exists("auth_nonce"):
+        # If it doesn't exist, create it
+        os.makedirs("auth_nonce")
+        
+        
     with open('auth_nonce/nonce' + data['key1'] + '.txt', 'w') as file:
         # Write the random number to the file
         file.write(str(random_number))
@@ -275,6 +281,11 @@ def authNonce():
 def register():
     # receber dados
     data = request.form
+
+    # Check if the directory exists
+    if not os.path.exists("Ecc-keys"):
+        # If it doesn't exist, create it
+        os.makedirs("Ecc-keys")
 
     # abrir sk do server
     with open('Ecc-keys/private_key.pem', 'rb') as key_file:
@@ -324,7 +335,7 @@ def register():
     # o nome do ficheiro fica usernamepk.pem
     filename = username + 'pk.pem'
     # vai para a diretoria do server, na subdiretoria client_keys
-    file.save('client_keys/' + filename)
+    file.save('.client_keys/' + filename)
 
     # enviar os dados para a função que guarda os dados na bd
     result = register_user(username, password, filename, path)
