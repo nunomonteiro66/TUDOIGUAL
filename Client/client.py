@@ -47,7 +47,7 @@ server_pk = None
 
 #default configurations
 def MakeConfigFile():
-    globalValues['username'] = "test"
+    globalValues['username'] = "deltest1"
     globalValues['password'] = "test"
     globalValues['sync_dir'] = 'sync'
     globalValues['server_keys'] = './.server_keys'
@@ -329,6 +329,33 @@ def checkNewFilesInServer():
         os.remove(globalValues['sync_dir']+"/"+file+".zip")
         os.remove(globalValues['sync_dir'] + "/hash.txt")
 
+#tells the server that a file was removed
+def removeFileServer(file):
+    url = SERVER_IP+'/removeFile'
+    data = {'key1': file, 'key2': globalValues['username']}
+    response = requests.post(url, data=data)
+    print(response.text)
+
+#checks if a file was deleted in a remote computer
+def checkDeletedFiles():
+    print("Checking for deleted files")
+    url = SERVER_IP+'/checkDeleted'
+    data = {'key1': globalValues['username']}
+    response = requests.post(url, data=data)
+    files_missing = response.text.split('|')
+    print(files_missing)
+    if(files_missing[0] == ""):
+        return
+    for file in files_missing:
+        try:
+            os.remove(globalValues['sync_dir']+"/"+file)
+            os.remove(globalValues['keys_dir']+"/"+file+".key")
+            os.remove(globalValues['signature_dir']+"/"+file+".sig")
+        except:
+            pass
+
+    
+    
 
 LoginForm()
 
@@ -366,17 +393,24 @@ if __name__ == '__main__':
 
     #encrypt dos ficheiros da diretoria
     sync_path = globalValues['sync_dir']
-    #sync_files_txt = "sync_files.txt" #file that will keep record of all the files in the sync directory
+    sync_files_txt = "sync_files.txt" #file that will keep record of all the files in the sync directory
 
-    #if not os.path.exists(sync_path): os.makedirs(sync_path)
-
-    #if not os.path.
+    if not os.path.exists(sync_path): os.makedirs(sync_path)
     allFiles1 = set(os.listdir(sync_path))
+    #if not os.path.
     while(True):
         allFiles2 = set(os.listdir(sync_path))
         if allFiles1 != allFiles2: #changes in the directory
             if(len(allFiles1) > len(allFiles2)): #a file was deleted
-                #for file in (allFiles1-allFiles2): os.remove("./.signatures/"+file+".sig")
+                print("A file was deleted")
+                for file in (allFiles1-allFiles2): 
+                    try: #if the file was deleted in the server, it will not be in the keys directory
+                        os.remove(globalValues['signature_dir']+"/"+file+".sig")
+                        os.remove(globalValues['keys_dir']+"/"+file+".key")
+                        #os.remove(sync_path+"/"+file)
+                        removeFileServer(file)
+                    except:
+                        pass
                 pass
             else: #a file was added
                 for file in (allFiles2-allFiles1):
@@ -401,6 +435,8 @@ if __name__ == '__main__':
 
         #check for new files in server
         checkNewFilesInServer()
+        dirList = checkDeletedFiles()
+
 
         time.sleep(10) #10 seconds
         #ask the server if there are any new files 
