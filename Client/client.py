@@ -13,7 +13,7 @@ import json
 from file_cypher import EncryptionClass
 import zipfile
 
-SERVER_IP = "http://"+"192.168.1.175:5000"
+SERVER_IP = 'http://127.0.0.1:5000'
 
 
 root = Tk()
@@ -27,6 +27,8 @@ x = (screen_width / 2) - (width / 2)
 y = (screen_height / 2) - (height / 2)
 root.geometry("%dx%d+%d+%d" % (width, height, x, y))
 root.resizable(0, 0)
+username = StringVar()
+password = StringVar()
 
 # =======================================VARIABLES=====================================
 globalValues = {
@@ -45,8 +47,8 @@ server_pk = None
 
 #default configurations
 def MakeConfigFile():
-    globalValues['username'] = 'asdasdasd'
-    globalValues['password'] = '1234'
+    globalValues['username'] = "test"
+    globalValues['password'] = "test"
     globalValues['sync_dir'] = 'sync'
     globalValues['server_keys'] = './.server_keys'
     globalValues['signature_dir'] = './.signatures'
@@ -66,9 +68,6 @@ def MakeConfigFile():
         os.makedirs(globalValues['keys_dir'])
     if not os.path.exists(globalValues['sync_dir']):
         os.makedirs(globalValues['sync_dir'])
-
-    
-
 
 
 def LoadConfigFile():
@@ -92,9 +91,9 @@ def LoginForm():
     lbl_password.grid(row=2)
     lbl_result1 = Label(LoginFrame, text="", font=('arial', 18))
     lbl_result1.grid(row=3, columnspan=2)
-    USERNAME = Entry(LoginFrame, font=('arial', 20), textvariable=globalValues['username'], width=15)
+    USERNAME = Entry(LoginFrame, font=('arial', 20), textvariable=username, width=15)
     USERNAME.grid(row=1, column=1)
-    PASSWORD = Entry(LoginFrame, font=('arial', 20), textvariable=globalValues['password'], width=15, show="*")
+    PASSWORD = Entry(LoginFrame, font=('arial', 20), textvariable=password, width=15, show="*")
     PASSWORD.grid(row=2, column=1)
     btn_login = Button(LoginFrame, text="Login", font=('arial', 18), width=35, command=Login)
     btn_login.grid(row=4, columnspan=2, pady=20)
@@ -112,9 +111,9 @@ def RegisterForm():
     lbl_password.grid(row=2)
     lbl_result2 = Label(RegisterFrame, text="", font=('arial', 18))
     lbl_result2.grid(row=5, columnspan=2)
-    USERNAME = Entry(RegisterFrame, font=('arial', 20), textvariable=globalValues['username'], width=15)
+    USERNAME = Entry(RegisterFrame, font=('arial', 20), textvariable=username, width=15)
     USERNAME.grid(row=1, column=1)
-    PASSWORD = Entry(RegisterFrame, font=('arial', 20), textvariable=globalValues['password'], width=15, show="*")
+    PASSWORD = Entry(RegisterFrame, font=('arial', 20), textvariable=password, width=15, show="*")
     PASSWORD.grid(row=2, column=1)
     btn_login = Button(RegisterFrame, text="Register", font=('arial', 18), width=35, command=Register)
     btn_login.grid(row=6, columnspan=2, pady=20)
@@ -153,10 +152,8 @@ def Login():
     response = requests.post(url, data=parameters)
 
     nonce = response.text.encode('utf-8')
-    if not os.path.exists('client_keys/client_private_key.pem'):
-        #gen_client_ECC_keys()
-        Encclass.genKeysRSA()
-    with open('client_keys/client_private_key.pem', 'rb') as key_file:
+
+    with open('.client_keys/sk.pem', 'rb') as key_file:
         serialized_sk = key_file.read()
         
         private_key = serialization.load_pem_private_key(
@@ -295,7 +292,7 @@ def checkNewFilesInServer():
         with zipfile.ZipFile(globalValues['sync_dir']+"/"+file+".zip", 'r') as zip_ref:
             zip_ref.extractall(globalValues['sync_dir'])
 
-        if globalValues['sync_dir']+"/hash.txt" == Encclass.fileHash(globalValues['sync_dir']+"/"+file+".zip"):
+        if globalValues['sync_dir']+"/.tmp/hash.txt" == Encclass.fileHash("sync/"+file+".zip"):
             print("File hash verification successful.")
         else:
             print('File hash verification failed.')
@@ -336,20 +333,21 @@ root.config(menu=menubar)
 # ========================================INITIALIZATION===================================
 if __name__ == '__main__':
     global Encclass
-    
 
     if not os.path.isfile('config.txt'): #first time running the program
         MakeConfigFile() #create config file with default values, and load them
         Encclass = EncryptionClass(globalValues)
         Register()
+        if not os.path.exists('.client_keys/client_private_key.pem'):
+            # gen_client_ECC_keys()
+            Encclass.gen_client_ECC_keys(globalValues['client_keys'])
     else:
         LoadConfigFile() #loads global values from the config file
         Encclass = EncryptionClass(globalValues)
         client_pk = Encclass.client_pk
         client_sk = Encclass.client_sk
 
-    
-    #root.mainloop()
+
     auth = Authentication()
     if(auth != "1"):
         print("Authentication failed")
@@ -359,8 +357,6 @@ if __name__ == '__main__':
 
     #sk = loadPrivateKey()
     #pk = loadPublicKey()
-
-
 
     #encrypt dos ficheiros da diretoria
     sync_path = "sync"

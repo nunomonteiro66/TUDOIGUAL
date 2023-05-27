@@ -24,7 +24,7 @@ mydb = mysql.connector.connect(
     host="localhost",
     user="root",
     password="1234",
-    database="new_schema"
+    database="tudoigual"
 )
 
 mycursor = mydb.cursor()
@@ -71,10 +71,9 @@ def getFile():
         zipObj.write("files/"+file, file)
         zipObj.write(".signatures/"+file+".sig", file+".sig")
 
-    zip_hash = fileHash(".tmp/"+file+".zip")
 
     with ZipFile(".tmp/"+file+".zip", 'a') as zipObj:
-        zipObj.writestr(".tmp/hash.txt", zip_hash)
+        zipObj.writestr(".tmp/hash.txt", fileHash(".tmp/"+file+".zip").decode('latin-1'))
     
     #delete tmp files 
     os.remove(".tmp/"+file+".key")
@@ -113,9 +112,11 @@ def sendFile():
     file = request.files['file']
     keyfile = request.files['keyfile']
 
+    file.save('files/' + data['key1'])
+
     # é necessário verificar o hash do ficheiro
     calculated_hash = fileHash(os.path.join('files', data['key1']))
-    expected_hash = data['key3']
+    expected_hash = data['key3'].encode('latin-1')
     if calculated_hash == expected_hash:
         print("File hash verification successful.")
     else:
@@ -123,7 +124,6 @@ def sendFile():
         return
 
     # Save the file to a desired location on the server
-    file.save('files/'+data['key1'])
     keyfile.save('files/'+data['key1']+".key")
 
     # é necessario calcular a assinatura do ficheiro pelo hash

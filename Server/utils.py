@@ -30,7 +30,6 @@ def AESkeyFromECC(pk):
         AESkey = hashlib.sha256(sharedECCkey)
         #AESkey.update(sharedECCkey_y.to_bytes(KEY_SIZE, byteorder='big'))
         AESkey = AESkey.digest()
-
         #encrypt
         return ctpk, AESkey
 
