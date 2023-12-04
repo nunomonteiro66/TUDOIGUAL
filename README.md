@@ -1,4 +1,5 @@
 # TUDOIGUAL
+![sync_files](https://github.com/nunomonteiro66/TUDOIGUAL/assets/45245111/1b32badf-dcee-4fcd-be3d-9ed6df2ba8a6)
 
 ## Requisitos
 - Aplicação cliente e servidor
